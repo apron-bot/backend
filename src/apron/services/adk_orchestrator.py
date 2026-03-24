@@ -18,6 +18,7 @@ try:
     from google.adk.agents.run_config import RunConfig
     from google.adk.artifacts import InMemoryArtifactService
     from google.adk.events.event import Event
+    from google.adk.models.lite_llm import LiteLlm
     from google.adk.sessions import InMemorySessionService
     from google.genai import types as genai_types
 except Exception:
@@ -28,6 +29,7 @@ except Exception:
     Event = None  # type: ignore[assignment]
     genai_types = None  # type: ignore[assignment]
     RunConfig = None  # type: ignore[assignment]
+    LiteLlm = None  # type: ignore[assignment]
 
 
 class AdkOrchestratorService:
@@ -43,6 +45,7 @@ class AdkOrchestratorService:
         planner: MealPlannerService,
         cooking: CookingSessionService,
         ordering: OrderingService,
+        model_backend: str = "native",
     ) -> None:
         if Agent is None:
             raise RuntimeError("google-adk is not installed. Install package `google-adk`.")
@@ -134,15 +137,17 @@ class AdkOrchestratorService:
                 return "Shopping list is empty."
             return "Shopping list: " + ", ".join(item.name for item in items)
 
-        async def answer_general_question(message: str) -> str:
-            return await self._llm.chat(
-                "You are Apron, a concise cooking assistant.",
-                [{"role": "user", "content": message}],
-            )
+        adk_model: str | LiteLlm
+        if model_backend == "litellm":
+            if LiteLlm is None:
+                raise RuntimeError("ADK LiteLlm model backend is unavailable.")
+            adk_model = LiteLlm(model=model)
+        else:
+            adk_model = model
 
         self._agent = Agent(
             name="apron_whatsapp_agent",
-            model=model,
+            model=adk_model,
             instruction=(
                 "You are Apron's WhatsApp brain. Always follow conversation_state and onboarding_step. "
                 "Tool-routing policy: "
@@ -156,7 +161,7 @@ class AdkOrchestratorService:
                 "- idle cooking start => start_cooking_today. "
                 "- idle groceries => start_grocery_order or order_delivery. "
                 "- shopping list => get_shopping_list. "
-                "- fallback => answer_general_question. "
+                "- for all other requests, answer directly without calling tools. "
                 "If a tool returns [HANDLED], reply exactly [HANDLED] and nothing else."
             ),
             tools=[
@@ -172,7 +177,6 @@ class AdkOrchestratorService:
                 start_grocery_order,
                 order_delivery,
                 get_shopping_list,
-                answer_general_question,
             ],
         )
 
@@ -199,7 +203,7 @@ class AdkOrchestratorService:
             session=session,
             artifact_service=self._artifact_service,
             session_service=self._session_service,
-            run_config=RunConfig(response_modalities=["TEXT"]),
+            run_config=RunConfig(response_modalities=["TEXT"], max_llm_calls=2),
         )
 
         response_parts: list[str] = []

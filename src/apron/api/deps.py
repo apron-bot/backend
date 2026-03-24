@@ -18,6 +18,7 @@ from apron.adapters.inmemory import (
     InMemoryShoppingListRepository,
     InMemoryUserRepository,
 )
+from apron.adapters.minimax_llm import MiniMaxLLMAdapter
 from apron.adapters.twilio_whatsapp import TwilioWhatsAppAdapter
 from apron.config import Settings
 from apron.services.cooking import CookingSessionService
@@ -40,6 +41,7 @@ def _container() -> dict:
     settings = get_settings()
     llm_provider = settings.llm_provider.lower().strip()
     messaging_provider = settings.messaging_provider.lower().strip()
+    adk_model_provider = settings.adk_model_provider.lower().strip()
 
     user_repo = InMemoryUserRepository()
     if messaging_provider == "twilio":
@@ -57,6 +59,13 @@ def _container() -> dict:
             model=settings.gemini_model,
             text_model=settings.gemini_text_model,
             vision_model=settings.gemini_vision_model,
+        )
+    elif llm_provider == "minimax" and settings.minimax_api_key:
+        llm = MiniMaxLLMAdapter(
+            api_key=settings.minimax_api_key,
+            api_base=settings.minimax_api_base,
+            text_model=settings.minimax_text_model,
+            vision_model=settings.minimax_vision_model,
         )
     elif llm_provider == "claude" and settings.anthropic_api_key:
         llm = ClaudeLLMAdapter(
@@ -94,10 +103,19 @@ def _container() -> dict:
     )
     onboarding = OnboardingService(user_repo, inventory, messaging, clock)
     cooking = CookingSessionService(messaging, llm, inventory_repo, user_repo)
-    adk_model = settings.gemini_text_model or settings.gemini_model
-    if settings.gemini_api_key:
-        # ADK/google-genai reads GOOGLE_API_KEY by default.
-        os.environ["GOOGLE_API_KEY"] = settings.gemini_api_key
+    if adk_model_provider == "minimax":
+        adk_model = settings.minimax_text_model
+        if settings.minimax_api_key:
+            os.environ["MINIMAX_API_KEY"] = settings.minimax_api_key
+        if settings.minimax_api_base:
+            os.environ["MINIMAX_API_BASE"] = settings.minimax_api_base
+        adk_model_backend = "litellm"
+    else:
+        adk_model = settings.gemini_text_model or settings.gemini_model
+        if settings.gemini_api_key:
+            # ADK/google-genai reads GOOGLE_API_KEY by default.
+            os.environ["GOOGLE_API_KEY"] = settings.gemini_api_key
+        adk_model_backend = "native"
     adk_orchestrator = AdkOrchestratorService(
         model=adk_model,
         llm=llm,
@@ -107,6 +125,7 @@ def _container() -> dict:
         planner=planner,
         cooking=cooking,
         ordering=ordering,
+        model_backend=adk_model_backend,
     )
     router = MessageRouterService(
         user_repo,
