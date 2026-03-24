@@ -196,6 +196,7 @@ class AdkOrchestratorService:
             agent=self._agent,
             session=session,
             artifact_service=self._artifact_service,
+            session_service=self._session_service,
         )
 
         response_parts: list[str] = []

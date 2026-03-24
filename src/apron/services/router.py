@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from apron.ports.llm import LLMPort
 from apron.ports.messaging import MessagingPort
 from apron.ports.repositories import UserRepository
@@ -10,6 +12,8 @@ from apron.services.meal_planner import MealPlannerService
 from apron.services.onboarding import OnboardingService
 from apron.services.ordering import OrderingService
 from apron.services.adk_orchestrator import AdkOrchestratorService
+
+logger = logging.getLogger(__name__)
 
 
 class MessageRouterService:
@@ -42,6 +46,7 @@ class MessageRouterService:
                 user = await self._onboarding.start(phone)
             await self._adk_orchestrator.handle_message(user, text, image_b64=image_b64)
         except Exception:
+            logger.exception("ADK router handling failed")
             try:
                 await self._messaging.send_text(
                     phone, "I'm having trouble right now. Try again in a moment."

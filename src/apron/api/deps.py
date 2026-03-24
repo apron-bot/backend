@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from apron.adapters.claude_llm import ClaudeLLMAdapter
@@ -94,6 +95,9 @@ def _container() -> dict:
     onboarding = OnboardingService(user_repo, inventory, messaging, clock)
     cooking = CookingSessionService(messaging, llm, inventory_repo, user_repo)
     adk_model = settings.gemini_text_model or settings.gemini_model
+    if settings.gemini_api_key:
+        # ADK/google-genai reads GOOGLE_API_KEY by default.
+        os.environ["GOOGLE_API_KEY"] = settings.gemini_api_key
     adk_orchestrator = AdkOrchestratorService(
         model=adk_model,
         llm=llm,
