@@ -10,6 +10,7 @@ from apron.api.deps import (
     get_plan_repo,
     get_planner,
     get_recipe_repo,
+    get_scheduler,
     get_user_repo,
 )
 
@@ -55,3 +56,21 @@ async def generate_recipe(user_id: UUID, filters: RecipeFilters, planner=Depends
 async def get_preferences(user_id: UUID, repo=Depends(get_user_repo)):
     user = await repo.get_by_id(user_id)
     return user.model_dump(exclude={"conversation_state", "onboarding_step"})
+
+
+@router.post("/admin/trigger/meal-plan/{user_id}")
+async def trigger_meal_plan(user_id: UUID, scheduler=Depends(get_scheduler)):
+    await scheduler.sunday_meal_plan(user_id=user_id)
+    return {"ok": True}
+
+
+@router.post("/admin/trigger/daily-reminder/{user_id}")
+async def trigger_daily_reminder(user_id: UUID, scheduler=Depends(get_scheduler)):
+    await scheduler.daily_reminder(user_id=user_id)
+    return {"ok": True}
+
+
+@router.post("/admin/trigger/low-stock-check/{user_id}")
+async def trigger_low_stock_check(user_id: UUID, scheduler=Depends(get_scheduler)):
+    await scheduler.low_stock_check(user_id=user_id)
+    return {"ok": True}

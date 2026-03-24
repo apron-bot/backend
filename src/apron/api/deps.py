@@ -22,6 +22,7 @@ from apron.services.meal_planner import MealPlannerService
 from apron.services.onboarding import OnboardingService
 from apron.services.ordering import OrderingService
 from apron.services.router import MessageRouterService
+from apron.services.scheduler import ProactiveSchedulerService
 
 
 @lru_cache(maxsize=1)
@@ -62,6 +63,7 @@ def _container() -> dict:
     onboarding = OnboardingService(user_repo, inventory, messaging, clock)
     cooking = CookingSessionService(messaging, llm, inventory_repo, user_repo)
     router = MessageRouterService(user_repo, llm, messaging, onboarding, inventory, planner, cooking, ordering)
+    scheduler = ProactiveSchedulerService(user_repo, inventory, planner)
     return {
         "user_repo": user_repo,
         "inventory_repo": inventory_repo,
@@ -70,6 +72,7 @@ def _container() -> dict:
         "order_repo": order_repo,
         "shopping_repo": shopping_repo,
         "ordering_service": ordering,
+        "scheduler": scheduler,
         "router": router,
         "inventory": inventory,
         "planner": planner,
@@ -102,3 +105,7 @@ def get_user_repo():
 
 def get_planner() -> MealPlannerService:
     return _container()["planner"]
+
+
+def get_scheduler() -> ProactiveSchedulerService:
+    return _container()["scheduler"]
