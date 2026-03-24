@@ -53,6 +53,12 @@ class OnboardingService:
                 )
                 return user
             parsed = await self._inventory_service.parse_photo(user, image_b64, persist=False)
+            if not parsed:
+                await self._messaging.send_text(
+                    user.phone_number,
+                    "I couldn't detect clear items from that photo. Please send another one.",
+                )
+                return user
             self._pending_inventory[str(user.id)] = parsed
             names = ", ".join(item.name for item in parsed) or "nothing"
             await self._messaging.send_text(
@@ -61,6 +67,21 @@ class OnboardingService:
             return await self._advance(user, 1)
 
         if step == 1:
+            if image_b64:
+                parsed = await self._inventory_service.parse_photo(user, image_b64, persist=False)
+                if not parsed:
+                    await self._messaging.send_text(
+                        user.phone_number,
+                        "I still couldn't read that well. Try one more photo with better lighting.",
+                    )
+                    return user
+                self._pending_inventory[str(user.id)] = parsed
+                names = ", ".join(item.name for item in parsed) or "nothing"
+                await self._messaging.send_text(
+                    user.phone_number, f"Updated: I now see {names}. Is this correct? (yes/no)"
+                )
+                return user
+
             if normalized in {"yes", "y", "correct"}:
                 pending = self._pending_inventory.pop(str(user.id), [])
                 if pending:
@@ -68,7 +89,8 @@ class OnboardingService:
                 await self._messaging.send_text(user.phone_number, "Great. Any allergies?")
                 return await self._advance(user, 2)
             await self._messaging.send_text(
-                user.phone_number, "Got it. Send corrections like: add 2 eggs, remove milk."
+                user.phone_number,
+                "Got it. Send a new photo or corrections like: add 2 eggs, remove milk.",
             )
             return user
 

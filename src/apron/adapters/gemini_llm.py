@@ -37,8 +37,8 @@ class GeminiLLMAdapter:
                     "parts": [
                         {"text": f"{system}\n\n{prompt}"},
                         {
-                            "inline_data": {
-                                "mime_type": "image/jpeg",
+                            "inlineData": {
+                                "mimeType": "image/jpeg",
                                 "data": image_b64,
                             }
                         },

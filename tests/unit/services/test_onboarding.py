@@ -51,7 +51,7 @@ async def test_step1_rejection_reprompts(fake_clock):
 
     same = await svc.handle_step(user, "no")
     assert same.onboarding_step == 1
-    assert "Send corrections" in messaging.sent[-1]["body"]
+    assert "new photo or corrections" in messaging.sent[-1]["body"]
 
 
 async def test_completion_sets_state_idle(fake_clock):

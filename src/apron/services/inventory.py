@@ -30,7 +30,14 @@ class InventoryService:
     async def parse_photo(
         self, user: UserProfile, image_b64: str, persist: bool = True
     ) -> list[InventoryItem]:
-        raw = await self._llm.vision("fridge inventory parse", image_b64, PHOTO_PROMPT)
+        try:
+            raw = await self._llm.vision("fridge inventory parse", image_b64, PHOTO_PROMPT)
+        except Exception:
+            await self._messaging.send_text(
+                user.phone_number,
+                "I had trouble reading that photo. Please try again with a clearer image.",
+            )
+            return []
         parsed = self._safe_json(raw)
         items = [
             InventoryItem(
