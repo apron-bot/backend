@@ -12,6 +12,7 @@ from apron.services.inventory import InventoryService
 from apron.services.meal_planner import MealPlannerService
 from apron.services.onboarding import OnboardingService
 from apron.services.ordering import OrderingService
+from apron.services.adk_orchestrator import AdkOrchestratorService
 
 
 INTENT_SYSTEM_PROMPT = """Classify intent and return JSON: {"intent": str, "entities": dict}.
@@ -31,6 +32,7 @@ class MessageRouterService:
         planner: MealPlannerService,
         cooking: CookingSessionService,
         ordering: OrderingService,
+        adk_orchestrator: AdkOrchestratorService | None = None,
     ) -> None:
         self._user_repo = user_repo
         self._llm = llm
@@ -40,6 +42,7 @@ class MessageRouterService:
         self._planner = planner
         self._cooking = cooking
         self._ordering = ordering
+        self._adk_orchestrator = adk_orchestrator
 
     async def handle(self, phone: str, text: str, image_b64: str | None = None) -> None:
         try:
@@ -65,6 +68,11 @@ class MessageRouterService:
             if user.conversation_state == ConversationState.ADJUSTING_PLAN:
                 await self._planner.handle_adjustment(user, text)
                 return
+
+            if user.conversation_state == ConversationState.IDLE and self._adk_orchestrator is not None:
+                handled = await self._adk_orchestrator.handle_idle(user, text, image_b64=image_b64)
+                if handled:
+                    return
 
             # Image-only messages should still work in idle mode.
             if image_b64 and not text.strip():

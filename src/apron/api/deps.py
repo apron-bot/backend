@@ -24,6 +24,7 @@ from apron.services.inventory import InventoryService
 from apron.services.meal_planner import MealPlannerService
 from apron.services.onboarding import OnboardingService
 from apron.services.ordering import OrderingService
+from apron.services.adk_orchestrator import AdkOrchestratorService
 from apron.services.router import MessageRouterService
 from apron.services.scheduler import ProactiveSchedulerService
 
@@ -38,6 +39,7 @@ def _container() -> dict:
     settings = get_settings()
     llm_provider = settings.llm_provider.lower().strip()
     messaging_provider = settings.messaging_provider.lower().strip()
+    orchestrator_provider = settings.orchestrator_provider.lower().strip()
 
     user_repo = InMemoryUserRepository()
     if messaging_provider == "twilio":
@@ -92,7 +94,30 @@ def _container() -> dict:
     )
     onboarding = OnboardingService(user_repo, inventory, messaging, clock)
     cooking = CookingSessionService(messaging, llm, inventory_repo, user_repo)
-    router = MessageRouterService(user_repo, llm, messaging, onboarding, inventory, planner, cooking, ordering)
+    adk_orchestrator = None
+    if orchestrator_provider == "adk":
+        adk_model = settings.gemini_text_model or settings.gemini_model
+        try:
+            adk_orchestrator = AdkOrchestratorService(
+                model=adk_model,
+                messaging=messaging,
+                inventory=inventory,
+                planner=planner,
+                ordering=ordering,
+            )
+        except Exception:
+            adk_orchestrator = None
+    router = MessageRouterService(
+        user_repo,
+        llm,
+        messaging,
+        onboarding,
+        inventory,
+        planner,
+        cooking,
+        ordering,
+        adk_orchestrator=adk_orchestrator,
+    )
     scheduler = ProactiveSchedulerService(user_repo, inventory, planner)
     return {
         "user_repo": user_repo,
