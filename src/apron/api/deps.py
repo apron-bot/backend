@@ -1,0 +1,104 @@
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+from apron.adapters.inmemory import (
+    InMemoryClock,
+    InMemoryInventoryRepository,
+    InMemoryLLM,
+    InMemoryMealPlanRepository,
+    InMemoryMessaging,
+    InMemoryOrderRepository,
+    InMemoryOrdering,
+    InMemoryRecipeRepository,
+    InMemoryShoppingListRepository,
+    InMemoryUserRepository,
+)
+from apron.config import Settings
+from apron.services.cooking import CookingSessionService
+from apron.services.inventory import InventoryService
+from apron.services.meal_planner import MealPlannerService
+from apron.services.onboarding import OnboardingService
+from apron.services.ordering import OrderingService
+from apron.services.router import MessageRouterService
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()
+
+
+@lru_cache(maxsize=1)
+def _container() -> dict:
+    user_repo = InMemoryUserRepository()
+    messaging = InMemoryMessaging()
+    llm = InMemoryLLM()
+    clock = InMemoryClock()
+    inventory_repo = InMemoryInventoryRepository()
+    plan_repo = InMemoryMealPlanRepository()
+    recipe_repo = InMemoryRecipeRepository()
+    shopping_repo = InMemoryShoppingListRepository()
+    order_repo = InMemoryOrderRepository()
+    ordering_port = InMemoryOrdering()
+
+    inventory = InventoryService(inventory_repo, llm, messaging)
+    planner = MealPlannerService(
+        user_repo,
+        inventory_repo,
+        plan_repo,
+        recipe_repo,
+        llm,
+        messaging,
+        clock,
+    )
+    ordering = OrderingService(
+        ordering_port,
+        shopping_repo,
+        order_repo,
+        messaging,
+        user_repo,
+    )
+    onboarding = OnboardingService(user_repo, inventory, messaging, clock)
+    cooking = CookingSessionService(messaging, llm, inventory_repo, user_repo)
+    router = MessageRouterService(user_repo, llm, messaging, onboarding, inventory, planner, cooking, ordering)
+    return {
+        "user_repo": user_repo,
+        "inventory_repo": inventory_repo,
+        "plan_repo": plan_repo,
+        "recipe_repo": recipe_repo,
+        "order_repo": order_repo,
+        "shopping_repo": shopping_repo,
+        "ordering_service": ordering,
+        "router": router,
+        "inventory": inventory,
+        "planner": planner,
+    }
+
+
+def get_router() -> MessageRouterService:
+    return _container()["router"]
+
+
+def get_inventory_repo():
+    return _container()["inventory_repo"]
+
+
+def get_plan_repo():
+    return _container()["plan_repo"]
+
+
+def get_recipe_repo():
+    return _container()["recipe_repo"]
+
+
+def get_order_repo():
+    return _container()["order_repo"]
+
+
+def get_user_repo():
+    return _container()["user_repo"]
+
+
+def get_planner() -> MealPlannerService:
+    return _container()["planner"]
