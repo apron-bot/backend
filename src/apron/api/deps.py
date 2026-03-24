@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from apron.adapters.claude_llm import ClaudeLLMAdapter
+from apron.adapters.gemini_llm import GeminiLLMAdapter
 from apron.adapters.inmemory import (
     InMemoryClock,
     InMemoryInventoryRepository,
@@ -15,6 +17,7 @@ from apron.adapters.inmemory import (
     InMemoryShoppingListRepository,
     InMemoryUserRepository,
 )
+from apron.adapters.twilio_whatsapp import TwilioWhatsAppAdapter
 from apron.config import Settings
 from apron.services.cooking import CookingSessionService
 from apron.services.inventory import InventoryService
@@ -32,9 +35,31 @@ def get_settings() -> Settings:
 
 @lru_cache(maxsize=1)
 def _container() -> dict:
+    settings = get_settings()
+    llm_provider = settings.llm_provider.lower().strip()
+    messaging_provider = settings.messaging_provider.lower().strip()
+
     user_repo = InMemoryUserRepository()
-    messaging = InMemoryMessaging()
-    llm = InMemoryLLM()
+    if messaging_provider == "twilio":
+        messaging = TwilioWhatsAppAdapter(
+            settings.twilio_account_sid,
+            settings.twilio_auth_token,
+            settings.twilio_from_number,
+        )
+    else:
+        messaging = InMemoryMessaging()
+
+    if llm_provider == "gemini" and settings.gemini_api_key:
+        llm = GeminiLLMAdapter(api_key=settings.gemini_api_key, model=settings.gemini_model)
+    elif llm_provider == "claude" and settings.anthropic_api_key:
+        llm = ClaudeLLMAdapter(
+            api_key=settings.anthropic_api_key,
+            openai_api_key=settings.openai_api_key,
+            model=settings.claude_model,
+        )
+    else:
+        llm = InMemoryLLM()
+
     clock = InMemoryClock()
     inventory_repo = InMemoryInventoryRepository()
     plan_repo = InMemoryMealPlanRepository()
