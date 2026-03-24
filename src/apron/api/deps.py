@@ -39,7 +39,6 @@ def _container() -> dict:
     settings = get_settings()
     llm_provider = settings.llm_provider.lower().strip()
     messaging_provider = settings.messaging_provider.lower().strip()
-    orchestrator_provider = settings.orchestrator_provider.lower().strip()
 
     user_repo = InMemoryUserRepository()
     if messaging_provider == "twilio":
@@ -94,19 +93,17 @@ def _container() -> dict:
     )
     onboarding = OnboardingService(user_repo, inventory, messaging, clock)
     cooking = CookingSessionService(messaging, llm, inventory_repo, user_repo)
-    adk_orchestrator = None
-    if orchestrator_provider == "adk":
-        adk_model = settings.gemini_text_model or settings.gemini_model
-        try:
-            adk_orchestrator = AdkOrchestratorService(
-                model=adk_model,
-                messaging=messaging,
-                inventory=inventory,
-                planner=planner,
-                ordering=ordering,
-            )
-        except Exception:
-            adk_orchestrator = None
+    adk_model = settings.gemini_text_model or settings.gemini_model
+    adk_orchestrator = AdkOrchestratorService(
+        model=adk_model,
+        llm=llm,
+        messaging=messaging,
+        onboarding=onboarding,
+        inventory=inventory,
+        planner=planner,
+        cooking=cooking,
+        ordering=ordering,
+    )
     router = MessageRouterService(
         user_repo,
         llm,

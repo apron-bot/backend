@@ -21,6 +21,5 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     llm_provider: str = "inmemory"
     messaging_provider: str = "inmemory"
-    orchestrator_provider: str = "classic"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
