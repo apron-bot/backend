@@ -15,6 +15,7 @@ from apron.services.ordering import OrderingService
 
 try:
     from google.adk.agents import Agent, InvocationContext
+    from google.adk.agents.run_config import RunConfig
     from google.adk.artifacts import InMemoryArtifactService
     from google.adk.events.event import Event
     from google.adk.sessions import InMemorySessionService
@@ -26,6 +27,7 @@ except Exception:
     InMemorySessionService = None  # type: ignore[assignment]
     Event = None  # type: ignore[assignment]
     genai_types = None  # type: ignore[assignment]
+    RunConfig = None  # type: ignore[assignment]
 
 
 class AdkOrchestratorService:
@@ -197,6 +199,7 @@ class AdkOrchestratorService:
             session=session,
             artifact_service=self._artifact_service,
             session_service=self._session_service,
+            run_config=RunConfig(response_modalities=["TEXT"]),
         )
 
         response_parts: list[str] = []
