@@ -11,7 +11,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-20250514"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_text_model: str = "gemini-3.1-flash-lite-preview"
+    gemini_vision_model: str = "gemini-2.5-flash"
 
     openai_api_key: str = ""
 

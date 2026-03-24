@@ -6,9 +6,17 @@ import httpx
 class GeminiLLMAdapter:
     """Implements LLMPort using Gemini Developer API (REST)."""
 
-    def __init__(self, api_key: str, model: str = "gemini-1.5-flash"):
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-2.5-flash",
+        text_model: str | None = None,
+        vision_model: str | None = None,
+    ):
         self._api_key = api_key
         self._model = model
+        self._text_model = text_model or model
+        self._vision_model = vision_model or model
         self._base_url = "https://generativelanguage.googleapis.com/v1beta/models"
 
     async def chat(self, system: str, messages: list[dict], tools: list[dict] | None = None) -> str:
@@ -22,7 +30,7 @@ class GeminiLLMAdapter:
         return await self._generate_text(prompt)
 
     async def vision(self, system: str, image_b64: str, prompt: str) -> str:
-        url = f"{self._base_url}/{self._model}:generateContent?key={self._api_key}"
+        url = f"{self._base_url}/{self._vision_model}:generateContent?key={self._api_key}"
         payload = {
             "contents": [
                 {
@@ -49,7 +57,7 @@ class GeminiLLMAdapter:
         return ""
 
     async def _generate_text(self, prompt: str) -> str:
-        url = f"{self._base_url}/{self._model}:generateContent?key={self._api_key}"
+        url = f"{self._base_url}/{self._text_model}:generateContent?key={self._api_key}"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         async with httpx.AsyncClient(timeout=45) as client:
             response = await client.post(url, json=payload)

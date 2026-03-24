@@ -50,7 +50,12 @@ def _container() -> dict:
         messaging = InMemoryMessaging()
 
     if llm_provider == "gemini" and settings.gemini_api_key:
-        llm = GeminiLLMAdapter(api_key=settings.gemini_api_key, model=settings.gemini_model)
+        llm = GeminiLLMAdapter(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model,
+            text_model=settings.gemini_text_model,
+            vision_model=settings.gemini_vision_model,
+        )
     elif llm_provider == "claude" and settings.anthropic_api_key:
         llm = ClaudeLLMAdapter(
             api_key=settings.anthropic_api_key,
