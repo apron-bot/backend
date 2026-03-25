@@ -83,7 +83,12 @@ class MealPlannerService:
             created_at=self._clock.now(),
         )
         await self._plan_repo.save(plan)
-        await self._messaging.send_text(user.phone_number, f"Your weekly plan is ready with {len(meals)} meals.")
+        meal_names = "\n".join(f"• {m.recipe.name}" for m in meals)
+        msg = f"Your weekly plan is ready with {len(meals)} meals:\n{meal_names}"
+        if missing:
+            missing_str = ", ".join(f"{m.name} ({m.quantity} {m.unit})" for m in missing)
+            msg += f"\n\nYou'll need to buy: {missing_str}\nWant me to order these for you?"
+        await self._messaging.send_text(user.phone_number, msg)
         return plan
 
     async def get_today_meal(self, user_id):

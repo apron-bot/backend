@@ -173,7 +173,16 @@ class AdkOrchestratorService:
             consumed = await self._inventory.log_consumed(user, message, image_b64=image_b64)
             if not consumed:
                 return "Couldn't figure out what was consumed."
-            return f"Updated inventory — subtracted: {', '.join(consumed)}"
+            result = f"Updated inventory — subtracted: {', '.join(consumed)}"
+            # Check for low/empty stock and proactively suggest restocking
+            remaining = await self._inventory._repo.get_all(user.id)
+            if len(remaining) <= 2:
+                low_names = [i.name for i in remaining] if remaining else []
+                if not low_names:
+                    result += "\n\nHeads up: the inventory is now empty! Suggest the user send a fridge photo or order groceries."
+                else:
+                    result += f"\n\nHeads up: inventory is running low (only {', '.join(low_names)} left). Suggest the user restock."
+            return result
 
         async def get_inventory() -> str:
             """Get the user's current kitchen inventory."""
@@ -186,6 +195,29 @@ class AdkOrchestratorService:
                 return "Inventory is empty."
             lines = [f"- {i.name}: {i.quantity} {i.unit}" for i in items]
             return "Current inventory:\n" + "\n".join(lines)
+
+        async def order_groceries(items: str) -> str:
+            """Order groceries using a browser agent. Items is a comma-separated list."""
+            if self._active.get("_tool_called"):
+                return _guard_msg
+            self._active["_tool_called"] = True
+            self._active["_msg_sent"] = True
+            user: UserProfile = self._active["user"]
+            from apron.adapters.browser_ordering import BrowserOrderingAdapter
+            browser = BrowserOrderingAdapter()
+            item_list = [i.strip() for i in items.split(",") if i.strip()]
+            if not item_list:
+                return "No items to order."
+            await self._messaging.send_text(
+                user.phone_number,
+                f"On it! I'm adding {len(item_list)} item(s) to your cart: {', '.join(item_list)}..."
+            )
+            order = await browser.add_to_cart(item_list)
+            await self._messaging.send_text(
+                user.phone_number,
+                f"Cart ready on {order.store}! {order.summary}"
+            )
+            return "Done — order status sent to user. Respond with HANDLED."
 
         async def get_shopping_list() -> str:
             """Get the current shopping list."""
@@ -245,6 +277,7 @@ class AdkOrchestratorService:
                 "- User says they ate/cooked something or sends a meal photo → log_meal\n"
                 "- has_image=True AND it looks like a fridge/pantry → parse_inventory_photo\n"
                 "- User asks what's in their fridge/inventory → get_inventory\n"
+                "- User wants to order/buy groceries → order_groceries (pass comma-separated item names)\n"
                 "- User asks about shopping list → get_shopping_list\n"
                 "- Everything else → just reply, NO tool call\n\n"
                 "# CRITICAL\n"
@@ -267,6 +300,7 @@ class AdkOrchestratorService:
                 log_meal,
                 parse_inventory_photo,
                 get_inventory,
+                order_groceries,
                 get_shopping_list,
             ],
         )
