@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 from uuid import uuid4
@@ -240,27 +241,47 @@ class AdkOrchestratorService:
                 "step": 0,
                 "status": "starting",
             })
-            order = await browser.add_to_cart(item_list)
-            if order.status == "failed":
-                msg = f"Sorry, I had trouble adding items on Mercadona. {order.summary}"
-                event_bus.emit("browser_step", {
-                    "screenshot": None,
-                    "description": msg,
-                    "step": -1,
-                    "status": "failed",
-                })
-            else:
-                msg = f"Cart ready on Mercadona!\n\n{order.summary}"
-                if order.cart_url:
-                    msg += f"\n\nOpen your cart here: {order.cart_url}"
-                event_bus.emit("browser_step", {
-                    "screenshot": None,
-                    "description": order.summary,
-                    "step": -1,
-                    "status": "done",
-                    "cart_url": order.cart_url,
-                })
-            await self._messaging.send_text(user.phone_number, msg)
+
+            # Run browser agent in background so the webhook can return immediately.
+            # The browser session can take minutes; blocking here would stall the
+            # entire request and make the bot appear unresponsive ("blank").
+            async def _run_browser():
+                try:
+                    order = await browser.add_to_cart(item_list)
+                    if order.status == "failed":
+                        msg = f"Sorry, I had trouble adding items on Mercadona. {order.summary}"
+                        event_bus.emit("browser_step", {
+                            "screenshot": None,
+                            "description": msg,
+                            "step": -1,
+                            "status": "failed",
+                        })
+                    else:
+                        msg = f"Cart ready on Mercadona!\n\n{order.summary}"
+                        if order.cart_url:
+                            msg += f"\n\nOpen your cart here: {order.cart_url}"
+                        event_bus.emit("browser_step", {
+                            "screenshot": None,
+                            "description": order.summary,
+                            "step": -1,
+                            "status": "done",
+                            "cart_url": order.cart_url,
+                        })
+                    await self._messaging.send_text(user.phone_number, msg)
+                except Exception:
+                    logger.exception("Background browser ordering failed")
+                    event_bus.emit("browser_step", {
+                        "screenshot": None,
+                        "description": "Something went wrong with the order.",
+                        "step": -1,
+                        "status": "failed",
+                    })
+                    await self._messaging.send_text(
+                        user.phone_number,
+                        "Sorry, something went wrong while ordering. Please try again.",
+                    )
+
+            asyncio.create_task(_run_browser())
             return "Done — order status sent to user. Respond with HANDLED."
 
         async def get_shopping_list() -> str:

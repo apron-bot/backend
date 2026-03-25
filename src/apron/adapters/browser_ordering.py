@@ -92,7 +92,7 @@ class BrowserOrderingAdapter:
         # Step callback for live screenshot streaming
         async def on_step(state, output, step_num):
             if self._on_step and state:
-                screenshot_b64 = state.get_screenshot() if hasattr(state, 'get_screenshot') else None
+                screenshot_b64 = getattr(state, "screenshot", None)
                 description = ""
                 if output and hasattr(output, 'next_goal'):
                     description = output.next_goal or ""
@@ -137,17 +137,16 @@ class BrowserOrderingAdapter:
             status = "cart_ready" if is_successful is not False else "failed"
 
             # Send final screenshot
-            if self._on_step and result.history:
-                last_state = result.history[-1] if result.history else None
-                if last_state and hasattr(last_state, 'get_screenshot'):
-                    final_ss = last_state.get_screenshot()
-                    if final_ss:
-                        try:
-                            r = self._on_step(final_ss, "Cart ready — waiting for confirmation", -1)
-                            if asyncio.iscoroutine(r):
-                                await r
-                        except Exception:
-                            pass
+            if self._on_step:
+                screenshots = result.screenshots()
+                if screenshots:
+                    final_ss = screenshots[-1]
+                    try:
+                        r = self._on_step(final_ss, "Cart ready — waiting for confirmation", -1)
+                        if asyncio.iscoroutine(r):
+                            await r
+                    except Exception:
+                        pass
 
             logger.info("Browser agent finished (status=%s, cart_url=%s): %s", status, cart_url, summary[:200])
             return GroceryOrder(
