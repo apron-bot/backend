@@ -35,6 +35,9 @@ def get_last_photo_b64(user_id: str) -> str | None:
 
 class RecipeFilters(BaseModel):
     query: str | None = None
+    servings: int | None = None
+    difficulty: str | None = None  # easy, medium, hard
+    flavor_profile: dict[str, int] | None = None  # e.g. {"salty": 2, "sweet": 1, ...}
 
 
 # --------------- User discovery endpoints ---------------
@@ -200,8 +203,21 @@ async def get_orders(user_id: UUID, repo=Depends(get_order_repo)):
 
 @router.post("/recipes/{user_id}/generate")
 async def generate_recipe(user_id: UUID, filters: RecipeFilters, planner=Depends(get_planner)):
-    _ = filters
-    recipes = await planner.suggest_from_inventory(user_id)
+    # Build a constraint string from filters for the LLM
+    parts = []
+    if filters.servings:
+        parts.append(f"for {filters.servings} people")
+    if filters.difficulty:
+        parts.append(f"difficulty: {filters.difficulty}")
+    if filters.flavor_profile:
+        flavors = [f"{k}={v}" for k, v in filters.flavor_profile.items() if v > 0]
+        if flavors:
+            parts.append(f"flavor emphasis: {', '.join(flavors)}")
+    if filters.query:
+        parts.append(filters.query)
+
+    constraint = "; ".join(parts) if parts else None
+    recipes = await planner.suggest_from_inventory(user_id, constraint=constraint)
     return [r.model_dump() for r in recipes]
 
 

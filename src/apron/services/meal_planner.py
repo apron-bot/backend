@@ -145,18 +145,19 @@ class MealPlannerService:
         await self._plan_repo.update(plan)
         return target
 
-    async def suggest_from_inventory(self, user_id):
+    async def suggest_from_inventory(self, user_id, constraint: str | None = None):
         inventory = await self._inventory_repo.get_all(user_id)
         if not inventory:
             return []
         items_str = ", ".join(f"{i.name} ({i.quantity} {i.unit})" for i in inventory)
+        extra = f"\nAdditional requirements: {constraint}" if constraint else ""
         raw = await self._llm.chat(
             "You are a recipe suggestion engine. Given the user's available ingredients, "
             "suggest up to 3 recipes they can make. Return ONLY a JSON array of recipe objects. "
             "Each recipe must have: name, description, cuisine, cook_time_minutes, difficulty "
             "(beginner/intermediate/advanced), servings, ingredients (array of {name, quantity, unit}), "
             "and steps (array of strings).",
-            [{"role": "user", "content": f"My ingredients: {items_str}"}],
+            [{"role": "user", "content": f"My ingredients: {items_str}{extra}"}],
         )
         return self._recipes_from_json(raw)[:3]
 
