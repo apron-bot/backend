@@ -105,13 +105,26 @@ class BrowserOrderingAdapter:
                         logger.debug("Step callback error", exc_info=True)
 
         import os
+        import shutil
         is_production = os.environ.get("ENVIRONMENT", "").lower() == "production"
 
-        logger.info("Browser agent starting: adding %d items to %s (headless=%s)", len(items), target_store, is_production)
+        # Find system Chromium (Docker installs it at /usr/bin/chromium)
+        system_chromium = shutil.which("chromium") or shutil.which("chromium-browser")
+
+        logger.info(
+            "Browser agent starting: adding %d items to %s (headless=%s, chromium=%s)",
+            len(items), target_store, is_production, system_chromium,
+        )
         try:
+            extra_args = []
+            if is_production:
+                # Railway runs as root in containers — Chromium needs --no-sandbox
+                extra_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
             browser_profile = BrowserProfile(
                 headless=is_production,
                 keep_alive=False,
+                executable_path=system_chromium if system_chromium else None,
+                args=extra_args,
             )
             agent = Agent(
                 task=task,

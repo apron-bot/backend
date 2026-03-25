@@ -26,10 +26,21 @@ class TelegramMessagingAdapter:
                     json={"chat_id": to, "text": chunk, "parse_mode": "Markdown"},
                 )
                 if resp.status_code >= 400:
-                    logger.error(
-                        "Telegram sendMessage failed: status=%d body=%s",
-                        resp.status_code, resp.text[:300],
+                    logger.warning(
+                        "Telegram Markdown send failed (status=%d), retrying as plain text",
+                        resp.status_code,
                     )
+                    # Retry without Markdown — special chars in error messages
+                    # can break Telegram's parser and silently drop the message.
+                    resp = await client.post(
+                        f"{self._base}/sendMessage",
+                        json={"chat_id": to, "text": chunk},
+                    )
+                    if resp.status_code >= 400:
+                        logger.error(
+                            "Telegram sendMessage failed: status=%d body=%s",
+                            resp.status_code, resp.text[:300],
+                        )
 
     async def send_image(self, to: str, image_url: str, caption: str) -> None:
         logger.info("[TG IMG -> %s] %s", to, caption[:200])
