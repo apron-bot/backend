@@ -2,38 +2,39 @@ FROM python:3.11-slim AS base
 
 WORKDIR /app
 
-# System deps for asyncpg + Chromium for browser-use
+# System deps for asyncpg + Chromium for browser-use (CDP-based, not Playwright)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
-    # Chromium dependencies for browser-use
+    curl \
+    # Chromium + all required dependencies for headless operation
     chromium \
-    chromium-driver \
     fonts-liberation \
+    fonts-dejavu-core \
+    fonts-freefont-ttf \
     libnss3 \
     libxss1 \
     libasound2 \
     libatk-bridge2.0-0 \
     libgtk-3-0 \
     libgbm1 \
+    libdrm2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libcups2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Tell browser-use / playwright where Chromium is
+# CRITICAL: Tell browser-use it's running in Docker
+# (auto-adjusts sandbox, paths, and container-specific behavior)
+ENV IN_DOCKER=True
 ENV CHROME_PATH=/usr/bin/chromium
 ENV CHROMIUM_PATH=/usr/bin/chromium
-# Playwright needs this to find the system Chromium
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
-# Running as root in container — Chromium requires --no-sandbox
-ENV CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage"
 
 # Install Python deps
 COPY pyproject.toml README.md ./
 COPY src/ src/
 RUN pip install --no-cache-dir .
-
-# Install playwright browsers as fallback + browser-use setup
-RUN python -m playwright install chromium 2>/dev/null || true
-RUN python -m browser_use install || true
 
 # Copy remaining source
 COPY alembic/ alembic/
@@ -43,6 +44,7 @@ ENV PORT=8000
 ENV STORAGE_BACKEND=sqlite
 ENV SQLITE_PATH=/app/data/apron.db
 ENV ENVIRONMENT=production
+ENV PYTHONUNBUFFERED=1
 
 # Create data dir for SQLite (mount a Railway Volume here)
 RUN mkdir -p /app/data

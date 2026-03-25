@@ -107,23 +107,27 @@ class BrowserOrderingAdapter:
         import os
         import shutil
         is_production = os.environ.get("ENVIRONMENT", "").lower() == "production"
+        in_docker = os.environ.get("IN_DOCKER", "").lower() in ("true", "1")
 
         # Find system Chromium (Docker installs it at /usr/bin/chromium)
-        system_chromium = shutil.which("chromium") or shutil.which("chromium-browser")
+        system_chromium = (
+            os.environ.get("CHROME_PATH")
+            or os.environ.get("CHROMIUM_PATH")
+            or shutil.which("chromium")
+            or shutil.which("chromium-browser")
+        )
 
         logger.info(
-            "Browser agent starting: adding %d items to %s (headless=%s, chromium=%s)",
-            len(items), target_store, is_production, system_chromium,
+            "Browser agent starting: adding %d items to %s (headless=%s, chromium=%s, in_docker=%s)",
+            len(items), target_store, is_production, system_chromium, in_docker,
         )
         try:
-            extra_args = []
-            if is_production:
-                # Railway runs as root in containers — Chromium needs --no-sandbox
-                extra_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+            extra_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
             browser_profile = BrowserProfile(
                 headless=is_production,
                 keep_alive=False,
                 executable_path=system_chromium if system_chromium else None,
+                chromium_sandbox=False,
                 args=extra_args,
             )
             agent = Agent(
