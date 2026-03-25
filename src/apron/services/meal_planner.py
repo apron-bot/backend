@@ -28,6 +28,7 @@ class MealPlannerService:
         inventory_repo: InventoryRepository,
         plan_repo: MealPlanRepository,
         recipe_repo: RecipeRepository,
+        shopping_repo,
         llm: LLMPort,
         messaging: MessagingPort,
         clock: ClockPort,
@@ -36,6 +37,7 @@ class MealPlannerService:
         self._inventory_repo = inventory_repo
         self._plan_repo = plan_repo
         self._recipe_repo = recipe_repo
+        self._shopping_repo = shopping_repo
         self._llm = llm
         self._messaging = messaging
         self._clock = clock
@@ -83,6 +85,23 @@ class MealPlannerService:
             created_at=self._clock.now(),
         )
         await self._plan_repo.save(plan)
+        # Save missing ingredients to the shopping list so they can be ordered
+        if missing and self._shopping_repo:
+            from apron.domain.models import ShoppingListItem
+            shopping_items = [
+                ShoppingListItem(
+                    id=uuid4(),
+                    user_id=user_id,
+                    name=m.name,
+                    quantity=m.quantity,
+                    unit=m.unit,
+                    added_by="meal_plan",
+                    purchased=False,
+                )
+                for m in missing
+            ]
+            await self._shopping_repo.add_items(shopping_items)
+            logger.info("Saved %d missing ingredients to shopping list for user=%s", len(shopping_items), user_id)
         meal_names = "\n".join(f"• {m.recipe.name}" for m in meals)
         msg = f"Your weekly plan is ready with {len(meals)} meals:\n{meal_names}"
         if missing:

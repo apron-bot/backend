@@ -116,7 +116,17 @@ class AdkOrchestratorService:
             plan = await self._planner.generate_weekly_plan(user.id)
             if not plan or not plan.meals:
                 return "Couldn't generate a meal plan. Try adding more items to your inventory first."
-            return "Done — meal plan sent to user. Respond with HANDLED."
+            meal_names = ", ".join(m.recipe.name for m in plan.meals)
+            if plan.missing_ingredients:
+                items_csv = ", ".join(m.name for m in plan.missing_ingredients)
+                return (
+                    f"Done — meal plan sent with {len(plan.meals)} meals: {meal_names}. "
+                    f"Missing ingredients added to shopping list: {items_csv}. "
+                    f"The user was asked 'Want me to order these for you?'. "
+                    f"If the user confirms (yes/ok/sure/please), call order_groceries with: {items_csv}. "
+                    f"Respond with HANDLED."
+                )
+            return f"Done — meal plan sent with {len(plan.meals)} meals: {meal_names}. Respond with HANDLED."
 
         async def start_cooking() -> str:
             """Start a cooking session for today's planned meal. Sends instructions directly."""

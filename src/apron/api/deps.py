@@ -50,13 +50,25 @@ def _container() -> dict:
     if storage_backend == "sqlite":
         from apron.adapters.sqlite.repositories import (
             SqliteInventoryRepository,
+            SqliteMealPlanRepository,
+            SqliteOrderRepository,
+            SqliteRecipeRepository,
+            SqliteShoppingListRepository,
             SqliteUserRepository,
         )
         user_repo = SqliteUserRepository(settings.sqlite_path)
         inventory_repo = SqliteInventoryRepository(settings.sqlite_path)
+        plan_repo = SqliteMealPlanRepository(settings.sqlite_path)
+        recipe_repo = SqliteRecipeRepository(settings.sqlite_path)
+        shopping_repo = SqliteShoppingListRepository(settings.sqlite_path)
+        order_repo = SqliteOrderRepository(settings.sqlite_path)
     else:
         user_repo = InMemoryUserRepository()
         inventory_repo = InMemoryInventoryRepository()
+        plan_repo = InMemoryMealPlanRepository()
+        recipe_repo = InMemoryRecipeRepository()
+        shopping_repo = InMemoryShoppingListRepository()
+        order_repo = InMemoryOrderRepository()
 
     if messaging_provider == "telegram":
         messaging = TelegramMessagingAdapter(
@@ -101,18 +113,15 @@ def _container() -> dict:
         llm = InMemoryLLM()
 
     clock = InMemoryClock()
-    plan_repo = InMemoryMealPlanRepository()
-    recipe_repo = InMemoryRecipeRepository()
-    shopping_repo = InMemoryShoppingListRepository()
-    order_repo = InMemoryOrderRepository()
     ordering_port = InMemoryOrdering()
 
-    inventory = InventoryService(inventory_repo, llm, messaging)
+    inventory = InventoryService(inventory_repo, llm, messaging, shopping_repo)
     planner = MealPlannerService(
         user_repo,
         inventory_repo,
         plan_repo,
         recipe_repo,
+        shopping_repo,
         llm,
         messaging,
         clock,

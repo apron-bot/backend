@@ -15,9 +15,19 @@ from apron.ports.messaging import MessagingPort
 from apron.ports.repositories import InventoryRepository
 
 
-PHOTO_PROMPT = """You are a kitchen inventory assistant. Analyze this fridge/pantry photo.
-List every visible food item with estimated quantity.
-Return ONLY a JSON array."""
+PHOTO_PROMPT = """You are a kitchen inventory assistant analyzing a photo of a fridge, pantry, or kitchen counter.
+
+Your task: identify every FOOD ITEM visible in the photo by its common grocery name.
+
+Rules:
+- Use standard grocery names: "whole milk", "eggs", "Greek yogurt", "cheddar cheese", "chicken breast", etc.
+- Do NOT describe containers or packaging. "Small yellow container" is WRONG. "Butter" is CORRECT.
+- If you cannot confidently identify a food, make your best guess based on shape/color/context.
+- Estimate quantity in standard units (ml, g, units, liters, kg).
+- If you can read a label, use the product name from the label.
+- Estimate expiry date if visible on packaging (format: YYYY-MM-DD).
+
+Return ONLY a JSON array: [{"name": "milk", "quantity": 1000, "unit": "ml", "estimated_expiry": "2026-04-15"}, ...]"""
 
 MESSAGE_PROMPT = """Extract inventory items from user text.
 Return ONLY JSON array: [{"name":"...", "quantity": 1, "unit":"units"}]"""
@@ -32,11 +42,11 @@ Return ONLY a JSON array: [{"name":"...", "quantity": 1, "unit":"units"}]"""
 
 
 class InventoryService:
-    def __init__(self, repo: InventoryRepository, llm: LLMPort, messaging: MessagingPort):
+    def __init__(self, repo: InventoryRepository, llm: LLMPort, messaging: MessagingPort, shopping_repo=None):
         self._repo = repo
         self._llm = llm
         self._messaging = messaging
-        self._shopping: dict[str, list[ShoppingListItem]] = {}
+        self._shopping_repo = shopping_repo
 
     async def parse_photo(
         self, user: UserProfile, image_b64: str, persist: bool = True
@@ -162,10 +172,13 @@ class InventoryService:
         return low
 
     async def get_shopping_list(self, user_id: UUID) -> list[ShoppingListItem]:
-        return self._shopping.get(str(user_id), [])
+        if self._shopping_repo:
+            return await self._shopping_repo.get_list(user_id)
+        return []
 
     async def add_to_shopping_list(self, user_id: UUID, items: list[ShoppingListItem]) -> None:
-        self._shopping.setdefault(str(user_id), []).extend(items)
+        if self._shopping_repo:
+            await self._shopping_repo.add_items(items)
 
     async def save_items(self, user_id: UUID, items: list[InventoryItem]) -> None:
         _ = user_id

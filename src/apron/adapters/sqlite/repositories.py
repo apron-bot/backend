@@ -15,7 +15,18 @@ from apron.domain.enums import (
     IngredientSource,
     TimeAvailability,
 )
-from apron.domain.models import InventoryItem, UserProfile
+from apron.domain.models import (
+    InventoryItem,
+    MealPlan,
+    Order,
+    OrderItem,
+    PlannedMeal,
+    Recipe,
+    RecipeIngredient,
+    ShoppingListItem,
+    UserProfile,
+)
+from apron.domain.enums import MealType, OrderStatus
 
 _USERS_DDL = """\
 CREATE TABLE IF NOT EXISTS users (
@@ -49,6 +60,49 @@ CREATE TABLE IF NOT EXISTS inventory (
     expiry_date TEXT,
     date_added TEXT,
     source TEXT NOT NULL
+)"""
+
+_MEAL_PLANS_DDL = """\
+CREATE TABLE IF NOT EXISTS meal_plans (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    week_start TEXT NOT NULL,
+    meals_json TEXT NOT NULL DEFAULT '[]',
+    total_estimated_cost REAL DEFAULT 0,
+    missing_ingredients_json TEXT NOT NULL DEFAULT '[]',
+    confirmed INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+)"""
+
+_ORDERS_DDL = """\
+CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    items_json TEXT NOT NULL DEFAULT '[]',
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    total_price REAL NOT NULL,
+    estimated_delivery_minutes INTEGER,
+    created_at TEXT NOT NULL
+)"""
+
+_SHOPPING_LIST_DDL = """\
+CREATE TABLE IF NOT EXISTS shopping_list (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    unit TEXT NOT NULL,
+    added_by TEXT NOT NULL,
+    purchased INTEGER DEFAULT 0
+)"""
+
+_FAVORITE_RECIPES_DDL = """\
+CREATE TABLE IF NOT EXISTS favorite_recipes (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    recipe_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
 )"""
 
 
@@ -271,3 +325,251 @@ class SqliteInventoryRepository:
             date_added=datetime.fromisoformat(row["date_added"]),
             source=IngredientSource(row["source"]),
         )
+
+
+class SqliteMealPlanRepository:
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._conn: aiosqlite.Connection | None = None
+
+    async def _get_conn(self) -> aiosqlite.Connection:
+        if self._conn is None:
+            self._conn = await aiosqlite.connect(self._db_path)
+            self._conn.row_factory = aiosqlite.Row
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+            await self._conn.execute(_MEAL_PLANS_DDL)
+            await self._conn.commit()
+        return self._conn
+
+    async def get_current(self, user_id: UUID) -> MealPlan | None:
+        conn = await self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM meal_plans WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (str(user_id),),
+        ) as cur:
+            row = await cur.fetchone()
+        return self._map(row) if row else None
+
+    async def save(self, plan: MealPlan) -> MealPlan:
+        logger.info("DB save meal_plan=%s user=%s meals=%d", plan.id, plan.user_id, len(plan.meals))
+        conn = await self._get_conn()
+        await conn.execute(
+            """INSERT OR REPLACE INTO meal_plans
+                (id, user_id, week_start, meals_json, total_estimated_cost,
+                 missing_ingredients_json, confirmed, created_at)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            self._to_row(plan),
+        )
+        await conn.commit()
+        return plan
+
+    async def update(self, plan: MealPlan) -> MealPlan:
+        conn = await self._get_conn()
+        await conn.execute(
+            """UPDATE meal_plans SET
+                meals_json=?, total_estimated_cost=?, missing_ingredients_json=?,
+                confirmed=?, created_at=?
+            WHERE id=?""",
+            (
+                json.dumps([m.model_dump(mode="json") for m in plan.meals]),
+                plan.total_estimated_cost,
+                json.dumps([i.model_dump(mode="json") for i in plan.missing_ingredients]),
+                1 if plan.confirmed else 0,
+                plan.created_at.isoformat(),
+                str(plan.id),
+            ),
+        )
+        await conn.commit()
+        return plan
+
+    @staticmethod
+    def _to_row(p: MealPlan) -> tuple:
+        return (
+            str(p.id),
+            str(p.user_id),
+            p.week_start.isoformat(),
+            json.dumps([m.model_dump(mode="json") for m in p.meals]),
+            p.total_estimated_cost,
+            json.dumps([i.model_dump(mode="json") for i in p.missing_ingredients]),
+            1 if p.confirmed else 0,
+            p.created_at.isoformat(),
+        )
+
+    @staticmethod
+    def _map(row) -> MealPlan:
+        meals_raw = json.loads(row["meals_json"])
+        meals = [PlannedMeal.model_validate(m) for m in meals_raw]
+        missing_raw = json.loads(row["missing_ingredients_json"])
+        missing = [RecipeIngredient.model_validate(i) for i in missing_raw]
+        return MealPlan(
+            id=UUID(row["id"]),
+            user_id=UUID(row["user_id"]),
+            week_start=date.fromisoformat(row["week_start"]),
+            meals=meals,
+            total_estimated_cost=float(row["total_estimated_cost"]),
+            missing_ingredients=missing,
+            confirmed=bool(row["confirmed"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+
+class SqliteOrderRepository:
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._conn: aiosqlite.Connection | None = None
+
+    async def _get_conn(self) -> aiosqlite.Connection:
+        if self._conn is None:
+            self._conn = await aiosqlite.connect(self._db_path)
+            self._conn.row_factory = aiosqlite.Row
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+            await self._conn.execute(_ORDERS_DDL)
+            await self._conn.commit()
+        return self._conn
+
+    async def save(self, order: Order) -> Order:
+        logger.info("DB save order=%s user=%s source=%s", order.id, order.user_id, order.source)
+        conn = await self._get_conn()
+        await conn.execute(
+            """INSERT INTO orders
+                (id, user_id, items_json, source, status, total_price,
+                 estimated_delivery_minutes, created_at)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                str(order.id),
+                str(order.user_id),
+                json.dumps([i.model_dump(mode="json") for i in order.items]),
+                order.source,
+                order.status.value,
+                order.total_price,
+                order.estimated_delivery_minutes,
+                order.created_at.isoformat(),
+            ),
+        )
+        await conn.commit()
+        return order
+
+    async def get_history(self, user_id: UUID, limit: int = 20) -> list[Order]:
+        conn = await self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (str(user_id), limit),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [self._map(r) for r in rows]
+
+    @staticmethod
+    def _map(row) -> Order:
+        items_raw = json.loads(row["items_json"])
+        items = [OrderItem.model_validate(i) for i in items_raw]
+        return Order(
+            id=UUID(row["id"]),
+            user_id=UUID(row["user_id"]),
+            items=items,
+            source=row["source"],
+            status=OrderStatus(row["status"]),
+            total_price=float(row["total_price"]),
+            estimated_delivery_minutes=row["estimated_delivery_minutes"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+
+class SqliteShoppingListRepository:
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._conn: aiosqlite.Connection | None = None
+
+    async def _get_conn(self) -> aiosqlite.Connection:
+        if self._conn is None:
+            self._conn = await aiosqlite.connect(self._db_path)
+            self._conn.row_factory = aiosqlite.Row
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+            await self._conn.execute(_SHOPPING_LIST_DDL)
+            await self._conn.commit()
+        return self._conn
+
+    async def get_list(self, user_id: UUID) -> list[ShoppingListItem]:
+        conn = await self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM shopping_list WHERE user_id = ? AND purchased = 0",
+            (str(user_id),),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [self._map(r) for r in rows]
+
+    async def add_items(self, items: list[ShoppingListItem]) -> None:
+        if not items:
+            return
+        conn = await self._get_conn()
+        await conn.executemany(
+            """INSERT OR REPLACE INTO shopping_list
+                (id, user_id, name, quantity, unit, added_by, purchased)
+            VALUES (?,?,?,?,?,?,?)""",
+            [
+                (str(i.id), str(i.user_id), i.name, i.quantity, i.unit, i.added_by, 1 if i.purchased else 0)
+                for i in items
+            ],
+        )
+        await conn.commit()
+
+    async def mark_purchased(self, item_ids: list[UUID]) -> None:
+        if not item_ids:
+            return
+        conn = await self._get_conn()
+        placeholders = ",".join("?" for _ in item_ids)
+        await conn.execute(
+            f"UPDATE shopping_list SET purchased = 1 WHERE id IN ({placeholders})",
+            [str(i) for i in item_ids],
+        )
+        await conn.commit()
+
+    async def clear(self, user_id: UUID) -> None:
+        conn = await self._get_conn()
+        await conn.execute("DELETE FROM shopping_list WHERE user_id = ?", (str(user_id),))
+        await conn.commit()
+
+    @staticmethod
+    def _map(row) -> ShoppingListItem:
+        return ShoppingListItem(
+            id=UUID(row["id"]),
+            user_id=UUID(row["user_id"]),
+            name=row["name"],
+            quantity=float(row["quantity"]),
+            unit=row["unit"],
+            added_by=row["added_by"],
+            purchased=bool(row["purchased"]),
+        )
+
+
+class SqliteRecipeRepository:
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._conn: aiosqlite.Connection | None = None
+
+    async def _get_conn(self) -> aiosqlite.Connection:
+        if self._conn is None:
+            self._conn = await aiosqlite.connect(self._db_path)
+            self._conn.row_factory = aiosqlite.Row
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+            await self._conn.execute(_FAVORITE_RECIPES_DDL)
+            await self._conn.commit()
+        return self._conn
+
+    async def get_favorites(self, user_id: UUID) -> list[Recipe]:
+        conn = await self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM favorite_recipes WHERE user_id = ?", (str(user_id),)
+        ) as cur:
+            rows = await cur.fetchall()
+        return [Recipe.model_validate(json.loads(r["recipe_json"])) for r in rows]
+
+    async def save_favorite(self, user_id: UUID, recipe: Recipe) -> None:
+        conn = await self._get_conn()
+        await conn.execute(
+            "INSERT OR REPLACE INTO favorite_recipes (id, user_id, recipe_json, created_at) VALUES (?,?,?,?)",
+            (str(recipe.id), str(user_id), recipe.model_dump_json(), datetime.now().isoformat()),
+        )
+        await conn.commit()
+
+    async def search(self, query: str, filters: dict) -> list[Recipe]:
+        return []
