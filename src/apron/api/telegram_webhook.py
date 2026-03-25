@@ -79,6 +79,15 @@ async def telegram_webhook(
                 "user_id": str(user.id),
                 "items": [item.model_dump(mode="json") for item in items],
             })
+
+            # Store photo and emit photo event for frontend
+            if image_b64:
+                from apron.api.dashboard import store_photo
+                store_photo(str(user.id), image_b64)
+                event_bus.emit("photo_received", {
+                    "chat_id": chat_id,
+                    "image_b64": image_b64,
+                })
     except Exception:
         logger.exception("Failed to emit inventory event")
 

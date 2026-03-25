@@ -140,6 +140,14 @@ class SqliteUserRepository:
             u.updated_at.isoformat(),
         )
 
+    async def list_all(self) -> list[UserProfile]:
+        conn = await self._get_conn()
+        async with conn.execute(
+            "SELECT * FROM users ORDER BY created_at DESC"
+        ) as cur:
+            rows = await cur.fetchall()
+        return [self._map(row) for row in rows]
+
     @staticmethod
     def _map(row) -> UserProfile:
         return UserProfile(

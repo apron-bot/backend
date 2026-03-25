@@ -31,6 +31,9 @@ class InMemoryUserRepository:
         self._by_phone[user.phone_number] = user.id
         return user
 
+    async def list_all(self) -> list[UserProfile]:
+        return list(self._users.values())
+
 
 class InMemoryInventoryRepository:
     def __init__(self):
