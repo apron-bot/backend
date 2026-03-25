@@ -55,6 +55,16 @@ async def list_users(repo=Depends(get_user_repo)):
     ]
 
 
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: UUID, repo=Depends(get_user_repo)):
+    """Delete a user — for demo/hackathon only."""
+    try:
+        await repo.delete(user_id)
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 @router.get("/users/by-phone/{phone}")
 async def get_user_by_phone(phone: str, repo=Depends(get_user_repo)):
     """Get user by phone/chat_id."""
