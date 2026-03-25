@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, datetime
 from uuid import UUID
 
 import aiosqlite
+
+logger = logging.getLogger(__name__)
 
 from apron.domain.enums import (
     ConversationState,
@@ -82,6 +85,7 @@ class SqliteUserRepository:
         return self._map(row)
 
     async def save(self, user: UserProfile) -> UserProfile:
+        logger.info("DB save user=%s phone=%s state=%s", user.id, user.phone_number, user.conversation_state.value)
         conn = await self._get_conn()
         await conn.execute(
             """INSERT INTO users (
@@ -97,6 +101,10 @@ class SqliteUserRepository:
         return user
 
     async def update(self, user: UserProfile) -> UserProfile:
+        logger.info(
+            "DB update user=%s state=%s onboarding_step=%d",
+            user.id, user.conversation_state.value, user.onboarding_step,
+        )
         conn = await self._get_conn()
         await conn.execute(
             """UPDATE users SET

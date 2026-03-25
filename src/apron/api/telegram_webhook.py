@@ -29,6 +29,7 @@ async def telegram_webhook(
     chat_id = str(message["chat"]["id"])
     text = message.get("text", "")
     image_b64 = None
+    logger.info("Telegram message from chat_id=%s text=%r has_photo=%s", chat_id, text[:100], bool(message.get("photo")))
 
     # Handle photo messages
     photos = message.get("photo")
@@ -59,9 +60,12 @@ async def telegram_webhook(
             text = message["caption"]
 
     if not text and not image_b64:
+        logger.info("Skipping empty message from chat_id=%s", chat_id)
         return {"ok": True}
 
+    logger.info("Dispatching to router: chat_id=%s text=%r has_image=%s", chat_id, text[:100], bool(image_b64))
     await router_service.handle(chat_id, text, image_b64=image_b64)
+    logger.info("Router finished for chat_id=%s", chat_id)
 
     # Emit event for frontend SSE
     event_bus = get_event_bus()

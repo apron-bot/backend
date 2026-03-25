@@ -29,11 +29,12 @@ class EventBus:
 
     def emit(self, event_type: str, data: Any = None) -> None:
         payload = json.dumps({"type": event_type, "data": data})
+        logger.info("SSE emit %s to %d subscriber(s)", event_type, len(self._subscribers))
         for q in self._subscribers:
             try:
                 q.put_nowait(payload)
             except asyncio.QueueFull:
-                pass  # drop if client is too slow
+                logger.warning("SSE queue full — dropping event %s", event_type)
 
 
 # Singleton

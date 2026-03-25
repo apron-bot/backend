@@ -72,8 +72,10 @@ class InventoryService:
         return items
 
     async def add_from_message(self, user: UserProfile, message: str) -> list[InventoryItem]:
+        logger.info("Adding inventory from message: user=%s message=%r", user.id, message[:100])
         raw = await self._llm.chat(MESSAGE_PROMPT, [{"role": "user", "content": message}])
         parsed = self._safe_json(raw)
+        logger.info("Parsed %d items from message for user=%s", len(parsed), user.id)
         if not parsed:
             token = message.strip().lower().split()[-1] if message.strip() else "item"
             parsed = [{"name": token, "quantity": 1, "unit": "units"}]
@@ -100,6 +102,7 @@ class InventoryService:
         self, user: UserProfile, message: str, image_b64: str | None = None
     ) -> list[str]:
         """Parse what the user ate (from text or meal photo) and subtract from inventory."""
+        logger.info("Logging consumed: user=%s message=%r has_image=%s", user.id, message[:100], bool(image_b64))
         if image_b64:
             try:
                 raw = await self._llm.vision("meal consumed parse", image_b64, CONSUMED_PHOTO_PROMPT)

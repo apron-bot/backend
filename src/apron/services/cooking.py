@@ -1,11 +1,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from apron.domain.enums import ConversationState
 from apron.domain.models import Recipe, UserProfile
 from apron.ports.llm import LLMPort
 from apron.ports.messaging import MessagingPort
 from apron.ports.repositories import InventoryRepository, UserRepository
+
+logger = logging.getLogger(__name__)
 
 
 class CookingSessionService:
@@ -23,6 +27,7 @@ class CookingSessionService:
         self._state: dict[str, dict] = {}
 
     async def start(self, user: UserProfile, recipe: Recipe) -> None:
+        logger.info("Cooking session started: user=%s recipe=%s", user.id, recipe.name)
         self._state[str(user.id)] = {"recipe": recipe, "current_step": 0}
         await self._user_repo.update(user.model_copy(update={"conversation_state": ConversationState.COOKING_MODE}))
         await self._messaging.send_text(user.phone_number, f"Let's cook {recipe.name}. Reply NEXT when ready.")
@@ -65,6 +70,7 @@ class CookingSessionService:
         await self._messaging.send_text(user.phone_number, answer)
 
     async def end_session(self, user: UserProfile) -> None:
+        logger.info("Cooking session ended: user=%s", user.id)
         self._state.pop(str(user.id), None)
         await self._user_repo.update(user.model_copy(update={"conversation_state": ConversationState.IDLE}))
         await self._messaging.send_text(user.phone_number, "Great job. Meal finished! Rate it 1-5.")

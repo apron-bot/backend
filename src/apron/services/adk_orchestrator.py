@@ -64,6 +64,7 @@ class AdkOrchestratorService:
         self._session_service = InMemorySessionService()
         self._artifact_service = InMemoryArtifactService()
         self._session_ids: dict[str, str] = {}
+        self._last_agent: dict[str, str] = {}
         self._active: dict[str, Any] = {}
 
         # ── Onboarding tools ──
@@ -393,6 +394,21 @@ class AdkOrchestratorService:
             )
             logger.info("Routing to conversation agent (state=%s)", user.conversation_state.value)
 
+        # Track which agent was used last so we can reset the session on
+        # agent transitions (e.g. onboarding → conversation).  Without this,
+        # the conversation agent inherits the full onboarding chat history and
+        # the LLM keeps generating onboarding-style replies.
+        key = str(user.id)
+        current_agent_name = agent.name
+        prev_agent_name = self._last_agent.get(key)
+        if prev_agent_name and prev_agent_name != current_agent_name:
+            logger.info(
+                "Agent switch detected (%s → %s) for user %s — resetting session",
+                prev_agent_name, current_agent_name, key,
+            )
+            self._session_ids.pop(key, None)
+        self._last_agent[key] = current_agent_name
+
         session = await self._get_or_create_session(user)
         invocation_id = f"inv_{uuid4().hex}"
         user_content = genai_types.Content(role="user", parts=[genai_types.Part(text=payload_text)])
@@ -434,11 +450,14 @@ class AdkOrchestratorService:
             logger.exception("Agent run failed")
 
         if self._active.get("_msg_sent"):
+            logger.info("Tool already sent message directly — skipping agent reply")
             return True
 
         reply = " ".join(p.strip() for p in response_parts if p and p.strip()).strip()
         if not reply or reply.strip("[] ").upper() == "HANDLED":
+            logger.info("Agent returned HANDLED or empty — no extra message needed")
             return True
+        logger.info("Agent reply to user=%s: %s", user.phone_number, reply[:200])
         await self._messaging.send_text(user.phone_number, reply)
         return True
 

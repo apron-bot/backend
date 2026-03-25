@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import timezone
 from uuid import uuid4
 
@@ -9,6 +10,8 @@ from apron.ports.clock import ClockPort
 from apron.ports.messaging import MessagingPort
 from apron.ports.repositories import UserRepository
 from apron.services.inventory import InventoryService
+
+logger = logging.getLogger(__name__)
 
 
 _POSITIVE_RESPONSES = {
@@ -54,6 +57,7 @@ class OnboardingService:
             updated_at=now,
         )
         await self._user_repo.save(user)
+        logger.info("Onboarding started for user=%s phone=%s", user.id, phone)
         await self._messaging.send_text(
             phone,
             "Welcome to Apron! Send me a photo of your fridge to start onboarding.",
@@ -65,6 +69,10 @@ class OnboardingService:
     ) -> UserProfile:
         step = user.onboarding_step
         normalized = message.strip().lower()
+        logger.info(
+            "Onboarding step=%d user=%s has_image=%s message=%r",
+            step, user.id, bool(image_b64), message[:100],
+        )
 
         if step == 0:
             if not image_b64:
@@ -169,6 +177,7 @@ class OnboardingService:
                 update={"conversation_state": ConversationState.IDLE, "onboarding_step": 0}
             )
             user = await self._save(user)
+            logger.info("Onboarding complete for user=%s — state set to IDLE", user.id)
             await self._messaging.send_text(
                 user.phone_number,
                 "You're all set! I'm generating your first weekly meal plan now..."
