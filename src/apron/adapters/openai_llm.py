@@ -23,7 +23,7 @@ class OpenAILLMAdapter:
             messages=payload,
             api_key=self._api_key,
             tools=tools,
-            max_tokens=1024,
+            max_tokens=4096,
         )
         return response.choices[0].message.content or ""
 

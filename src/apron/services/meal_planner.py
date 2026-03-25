@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import timedelta
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from apron.domain.enums import MealType
 from apron.domain.models import MealPlan, PlannedMeal, Recipe, RecipeIngredient
@@ -40,12 +43,30 @@ class MealPlannerService:
     async def generate_weekly_plan(self, user_id):
         user = await self._user_repo.get_by_id(user_id)
         inventory = await self._inventory_repo.get_all(user_id)
+        items_str = ", ".join(f"{i.name} ({i.quantity} {i.unit})" for i in inventory) or "none"
+        prefs = ", ".join(user.dietary_preferences) or "none"
+        allergies = ", ".join(user.allergies) or "none"
+        cuisines = ", ".join(user.preferred_cuisines) or "any"
         raw = await self._llm.chat(
-            "Generate a 7-day meal plan JSON",
-            [{"role": "user", "content": f"inventory={len(inventory)} user={user.phone_number}"}],
+            "You are a meal planning engine. Generate a 7-day dinner plan. "
+            "Return ONLY a JSON array of recipe objects. "
+            "Each recipe must have: name, description, cuisine, cook_time_minutes, difficulty "
+            "(beginner/intermediate/advanced), servings, ingredients (array of {name, quantity, unit}), "
+            "and steps (array of strings).",
+            [{"role": "user", "content": (
+                f"Inventory: {items_str}\n"
+                f"Allergies: {allergies}\n"
+                f"Diet: {prefs}\n"
+                f"Preferred cuisines: {cuisines}\n"
+                f"Household size: {user.household_size}\n"
+                f"Budget: €{user.weekly_budget}/week"
+            )}],
         )
+        logger.info("Meal plan LLM raw response: %s", raw[:500])
         recipes = self._recipes_from_json(raw)
+        logger.info("Parsed %d recipes from LLM", len(recipes))
         safe_recipes = filter_safe_recipes(recipes, user)
+        logger.info("After safety filter: %d recipes", len(safe_recipes))
         missing = calculate_missing_ingredients(safe_recipes, inventory)
         today = self._clock.today()
         meals = [
@@ -121,9 +142,16 @@ class MealPlannerService:
 
     async def suggest_from_inventory(self, user_id):
         inventory = await self._inventory_repo.get_all(user_id)
+        if not inventory:
+            return []
+        items_str = ", ".join(f"{i.name} ({i.quantity} {i.unit})" for i in inventory)
         raw = await self._llm.chat(
-            "Generate three recipes from inventory only",
-            [{"role": "user", "content": ",".join(i.name for i in inventory)}],
+            "You are a recipe suggestion engine. Given the user's available ingredients, "
+            "suggest up to 3 recipes they can make. Return ONLY a JSON array of recipe objects. "
+            "Each recipe must have: name, description, cuisine, cook_time_minutes, difficulty "
+            "(beginner/intermediate/advanced), servings, ingredients (array of {name, quantity, unit}), "
+            "and steps (array of strings).",
+            [{"role": "user", "content": f"My ingredients: {items_str}"}],
         )
         return self._recipes_from_json(raw)[:3]
 
@@ -149,8 +177,14 @@ class MealPlannerService:
         return None
 
     def _recipes_from_json(self, raw: str) -> list[Recipe]:
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1]
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+        text = text.strip()
         try:
-            payload = json.loads(raw)
+            payload = json.loads(text)
         except json.JSONDecodeError:
             payload = []
         if isinstance(payload, dict):

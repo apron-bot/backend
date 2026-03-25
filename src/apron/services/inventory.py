@@ -22,6 +22,14 @@ Return ONLY a JSON array."""
 MESSAGE_PROMPT = """Extract inventory items from user text.
 Return ONLY JSON array: [{"name":"...", "quantity": 1, "unit":"units"}]"""
 
+CONSUMED_TEXT_PROMPT = """The user says they ate or used some food. Extract what was consumed.
+Return ONLY a JSON array: [{"name":"...", "quantity": 1, "unit":"units"}]
+Use reasonable estimates if quantities aren't specified (e.g. "I ate eggs" → 2 eggs)."""
+
+CONSUMED_PHOTO_PROMPT = """Analyze this photo of a meal that was eaten. Identify the ingredients
+that were likely used to make this dish and estimate quantities consumed.
+Return ONLY a JSON array: [{"name":"...", "quantity": 1, "unit":"units"}]"""
+
 
 class InventoryService:
     def __init__(self, repo: InventoryRepository, llm: LLMPort, messaging: MessagingPort):
@@ -87,6 +95,58 @@ class InventoryService:
             await self._repo.bulk_upsert(items)
             await self._messaging.send_text(user.phone_number, f"Added {len(items)} item(s) to inventory.")
         return items
+
+    async def log_consumed(
+        self, user: UserProfile, message: str, image_b64: str | None = None
+    ) -> list[str]:
+        """Parse what the user ate (from text or meal photo) and subtract from inventory."""
+        if image_b64:
+            try:
+                raw = await self._llm.vision("meal consumed parse", image_b64, CONSUMED_PHOTO_PROMPT)
+            except Exception:
+                return []
+        else:
+            raw = await self._llm.chat(
+                CONSUMED_TEXT_PROMPT, [{"role": "user", "content": message}]
+            )
+        parsed = self._safe_json(raw)
+        if not parsed:
+            return []
+
+        current = await self._repo.get_all(user.id)
+        updated: list[InventoryItem] = []
+        deleted: list[UUID] = []
+        consumed_names: list[str] = []
+
+        for entry in parsed:
+            name = str(entry.get("name", "")).strip().lower()
+            qty = float(entry.get("quantity", 1))
+            if not name:
+                continue
+            consumed_names.append(name)
+            match = self._fuzzy_match(name, current)
+            if match:
+                new_qty = max(0, match.quantity - qty)
+                if new_qty > 0:
+                    updated.append(match.model_copy(update={"quantity": new_qty}))
+                else:
+                    deleted.append(match.id)
+
+        if updated:
+            await self._repo.bulk_upsert(updated)
+        for item_id in deleted:
+            await self._repo.delete(item_id)
+        return consumed_names
+
+    @staticmethod
+    def _fuzzy_match(name: str, items: list[InventoryItem]) -> InventoryItem | None:
+        """Match consumed item name against inventory using fuzzy containment."""
+        name = name.lower().rstrip("s")  # normalise plural: eggs→egg, bananas→banana
+        for item in items:
+            inv = item.name.lower().rstrip("s")
+            if name == inv or name in inv or inv in name:
+                return item
+        return None
 
     async def subtract_recipe(self, user_id: UUID, recipe: Recipe) -> None:
         current = await self._repo.get_all(user_id)

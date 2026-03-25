@@ -104,6 +104,18 @@ class AdkOrchestratorService:
                 return "No recipe suggestions available from current inventory."
             return "You can cook: " + ", ".join(r.name for r in recipes)
 
+        async def generate_meal_plan() -> str:
+            """Generate a weekly meal plan based on user's inventory and preferences. Sends plan directly."""
+            if self._active.get("_tool_called"):
+                return _guard_msg
+            self._active["_tool_called"] = True
+            self._active["_msg_sent"] = True
+            user: UserProfile = self._active["user"]
+            plan = await self._planner.generate_weekly_plan(user.id)
+            if not plan or not plan.meals:
+                return "Couldn't generate a meal plan. Try adding more items to your inventory first."
+            return "Done — meal plan sent to user. Respond with HANDLED."
+
         async def start_cooking() -> str:
             """Start a cooking session for today's planned meal. Sends instructions directly."""
             if self._active.get("_tool_called"):
@@ -150,6 +162,18 @@ class AdkOrchestratorService:
             if not items:
                 return "Couldn't detect clear items in the photo."
             return f"Added {len(items)} item(s): " + ", ".join(i.name for i in items)
+
+        async def log_meal(message: str) -> str:
+            """Log food the user ate or cooked. Subtracts consumed items from inventory."""
+            if self._active.get("_tool_called"):
+                return _guard_msg
+            self._active["_tool_called"] = True
+            user: UserProfile = self._active["user"]
+            image_b64: str | None = self._active.get("image_b64")
+            consumed = await self._inventory.log_consumed(user, message, image_b64=image_b64)
+            if not consumed:
+                return "Couldn't figure out what was consumed."
+            return f"Updated inventory — subtracted: {', '.join(consumed)}"
 
         async def get_inventory() -> str:
             """Get the user's current kitchen inventory."""
@@ -214,10 +238,12 @@ class AdkOrchestratorService:
                 "# Tool routing\n"
                 "- User asks what's for today → get_today_meal\n"
                 "- User wants recipe ideas → suggest_recipes\n"
+                "- User wants a weekly meal plan → generate_meal_plan\n"
                 "- User wants to start cooking → start_cooking\n"
                 "- state=cooking_mode → cooking_step\n"
                 "- User adds/removes food items → add_inventory\n"
-                "- has_image=True → parse_inventory_photo\n"
+                "- User says they ate/cooked something or sends a meal photo → log_meal\n"
+                "- has_image=True AND it looks like a fridge/pantry → parse_inventory_photo\n"
                 "- User asks what's in their fridge/inventory → get_inventory\n"
                 "- User asks about shopping list → get_shopping_list\n"
                 "- Everything else → just reply, NO tool call\n\n"
@@ -234,9 +260,11 @@ class AdkOrchestratorService:
             tools=[
                 get_today_meal,
                 suggest_recipes,
+                generate_meal_plan,
                 start_cooking,
                 cooking_step,
                 add_inventory,
+                log_meal,
                 parse_inventory_photo,
                 get_inventory,
                 get_shopping_list,
