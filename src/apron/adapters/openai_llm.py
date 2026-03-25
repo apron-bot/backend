@@ -3,18 +3,16 @@ from __future__ import annotations
 from litellm import acompletion
 
 
-class MiniMaxLLMAdapter:
-    """Implements LLMPort using MiniMax via LiteLLM."""
+class OpenAILLMAdapter:
+    """Implements LLMPort using OpenAI models via LiteLLM."""
 
     def __init__(
         self,
         api_key: str,
-        api_base: str = "https://api.minimax.io",
-        text_model: str = "minimax/MiniMax-M2.5",
-        vision_model: str = "minimax/MiniMax-VL-01",
+        text_model: str = "openai/gpt-4.1-mini",
+        vision_model: str = "openai/gpt-4.1-mini",
     ) -> None:
         self._api_key = api_key
-        self._api_base = api_base
         self._text_model = text_model
         self._vision_model = vision_model
 
@@ -24,7 +22,6 @@ class MiniMaxLLMAdapter:
             model=self._text_model,
             messages=payload,
             api_key=self._api_key,
-            api_base=self._api_base,
             tools=tools,
             max_tokens=1024,
         )
@@ -44,7 +41,6 @@ class MiniMaxLLMAdapter:
                 },
             ],
             api_key=self._api_key,
-            api_base=self._api_base,
             max_tokens=1024,
         )
         return response.choices[0].message.content or "[]"

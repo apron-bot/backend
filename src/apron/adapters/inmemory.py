@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, datetime, timezone
 from uuid import UUID
 
@@ -121,15 +122,19 @@ class InMemoryShoppingListRepository:
 class InMemoryMessaging:
     def __init__(self):
         self.sent: list[dict] = []
+        self._log = logging.getLogger("apron.messaging")
 
     async def send_text(self, to: str, body: str) -> None:
         self.sent.append({"type": "text", "to": to, "body": body})
+        self._log.info("[MSG -> %s] %s", to, body)
 
     async def send_image(self, to: str, image_url: str, caption: str) -> None:
         self.sent.append({"type": "image", "to": to, "image_url": image_url, "caption": caption})
+        self._log.info("[IMG -> %s] %s (%s)", to, caption, image_url)
 
     async def send_template(self, to: str, template: str, params: dict) -> None:
         self.sent.append({"type": "template", "to": to, "template": template, "params": params})
+        self._log.info("[TPL -> %s] %s %s", to, template, params)
 
 
 class InMemoryLLM:

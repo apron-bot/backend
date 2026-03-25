@@ -19,6 +19,7 @@ from apron.adapters.inmemory import (
     InMemoryUserRepository,
 )
 from apron.adapters.minimax_llm import MiniMaxLLMAdapter
+from apron.adapters.openai_llm import OpenAILLMAdapter
 from apron.adapters.twilio_whatsapp import TwilioWhatsAppAdapter
 from apron.config import Settings
 from apron.services.cooking import CookingSessionService
@@ -67,6 +68,12 @@ def _container() -> dict:
             text_model=settings.minimax_text_model,
             vision_model=settings.minimax_vision_model,
         )
+    elif llm_provider == "openai" and settings.openai_api_key:
+        llm = OpenAILLMAdapter(
+            api_key=settings.openai_api_key,
+            text_model=settings.openai_text_model,
+            vision_model=settings.openai_vision_model,
+        )
     elif llm_provider == "claude" and settings.anthropic_api_key:
         llm = ClaudeLLMAdapter(
             api_key=settings.anthropic_api_key,
@@ -103,7 +110,12 @@ def _container() -> dict:
     )
     onboarding = OnboardingService(user_repo, inventory, messaging, clock)
     cooking = CookingSessionService(messaging, llm, inventory_repo, user_repo)
-    if adk_model_provider == "minimax":
+    if adk_model_provider == "openai":
+        adk_model = settings.openai_text_model
+        if settings.openai_api_key:
+            os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+        adk_model_backend = "litellm"
+    elif adk_model_provider == "minimax":
         adk_model = settings.minimax_text_model
         if settings.minimax_api_key:
             os.environ["MINIMAX_API_KEY"] = settings.minimax_api_key

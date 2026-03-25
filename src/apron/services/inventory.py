@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 from apron.domain.enums import IngredientSource
 from apron.domain.models import InventoryItem, Recipe, ShoppingListItem, UserProfile
@@ -32,13 +35,16 @@ class InventoryService:
     ) -> list[InventoryItem]:
         try:
             raw = await self._llm.vision("fridge inventory parse", image_b64, PHOTO_PROMPT)
+            logger.info("Vision LLM raw response: %s", raw)
         except Exception:
+            logger.exception("Vision LLM call failed")
             await self._messaging.send_text(
                 user.phone_number,
                 "I had trouble reading that photo. Please try again with a clearer image.",
             )
             return []
         parsed = self._safe_json(raw)
+        logger.info("Parsed items: %s", parsed)
         items = [
             InventoryItem(
                 id=uuid4(),
@@ -104,13 +110,28 @@ class InventoryService:
 
     @staticmethod
     def _safe_json(raw: str) -> list[dict]:
+        # Strip markdown code fences if present
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1]  # drop ```json line
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+        text = text.strip()
         try:
-            data = json.loads(raw)
-            if isinstance(data, list):
-                return [i for i in data if isinstance(i, dict)]
+            data = json.loads(text)
+            if not isinstance(data, list):
+                return []
+            results = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                # Normalise: accept "item" or "name" as the item name key
+                if "name" not in item and "item" in item:
+                    item["name"] = item.pop("item")
+                results.append(item)
+            return results
         except json.JSONDecodeError:
             return []
-        return []
 
     @staticmethod
     def _parse_expiry(raw: str | None) -> date | None:

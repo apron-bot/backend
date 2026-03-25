@@ -33,7 +33,7 @@ except Exception:
 
 
 class AdkOrchestratorService:
-    """ADK-first orchestrator for all conversation states."""
+    """Simplified ADK orchestrator — onboarding + free chat."""
 
     def __init__(
         self,
@@ -62,80 +62,20 @@ class AdkOrchestratorService:
         self._session_ids: dict[str, str] = {}
         self._active: dict[str, Any] = {}
 
+        # -- Single tool: onboarding --
         async def onboarding_step(message: str) -> str:
+            """Advance the onboarding conversation by one step.
+
+            Call this ONCE when state=onboarding. It sends a reply to the user
+            directly — do NOT reply yourself after calling this.
+            """
+            if self._active.get("_tool_called"):
+                return "Already handled. Stop."
+            self._active["_tool_called"] = True
             user: UserProfile = self._active["user"]
             image_b64: str | None = self._active.get("image_b64")
             await self._onboarding.handle_step(user, message, image_b64=image_b64)
-            return "[HANDLED]"
-
-        async def cooking_step(message: str) -> str:
-            user: UserProfile = self._active["user"]
-            await self._cooking.handle_step(user, message)
-            return "[HANDLED]"
-
-        async def ordering_step(message: str) -> str:
-            user: UserProfile = self._active["user"]
-            await self._ordering.handle(user, message)
-            return "[HANDLED]"
-
-        async def adjust_plan_step(message: str) -> str:
-            user: UserProfile = self._active["user"]
-            await self._planner.handle_adjustment(user, message)
-            return "[HANDLED]"
-
-        async def add_inventory(message: str) -> str:
-            user: UserProfile = self._active["user"]
-            await self._inventory.add_from_message(user, message)
-            return "[HANDLED]"
-
-        async def parse_inventory_photo() -> str:
-            user: UserProfile = self._active["user"]
-            image_b64: str | None = self._active.get("image_b64")
-            if not image_b64:
-                return "No photo attached. Ask the user to send a photo."
-            items = await self._inventory.parse_photo(user, image_b64)
-            if not items:
-                return "I could not detect clear items in the photo."
-            return f"Added {len(items)} item(s) from photo."
-
-        async def get_today_meal() -> str:
-            user: UserProfile = self._active["user"]
-            meal = await self._planner.get_today_meal(user.id)
-            if not meal:
-                return "No meal planned for today."
-            return f"Tonight: {meal.recipe.name} ({meal.recipe.cook_time_minutes} min)."
-
-        async def suggest_from_inventory() -> str:
-            user: UserProfile = self._active["user"]
-            recipes = await self._planner.suggest_from_inventory(user.id)
-            if not recipes:
-                return "No recipe suggestions available from current inventory."
-            return "You can cook: " + ", ".join(r.name for r in recipes)
-
-        async def start_cooking_today() -> str:
-            user: UserProfile = self._active["user"]
-            meal = await self._planner.get_today_meal(user.id)
-            if not meal:
-                return "No recipe to cook right now."
-            await self._cooking.start(user, meal.recipe)
-            return "[HANDLED]"
-
-        async def start_grocery_order() -> str:
-            user: UserProfile = self._active["user"]
-            await self._ordering.start_order(user)
-            return "[HANDLED]"
-
-        async def order_delivery(message: str) -> str:
-            user: UserProfile = self._active["user"]
-            await self._ordering.order_delivery(user, message)
-            return "[HANDLED]"
-
-        async def get_shopping_list() -> str:
-            user: UserProfile = self._active["user"]
-            items = await self._inventory.get_shopping_list(user.id)
-            if not items:
-                return "Shopping list is empty."
-            return "Shopping list: " + ", ".join(item.name for item in items)
+            return "Done — reply sent to user. Respond with HANDLED and nothing else."
 
         adk_model: str | LiteLlm
         if model_backend == "litellm":
@@ -149,35 +89,22 @@ class AdkOrchestratorService:
             name="apron_whatsapp_agent",
             model=adk_model,
             instruction=(
-                "You are Apron's WhatsApp brain. Always follow conversation_state and onboarding_step. "
-                "Tool-routing policy: "
-                "- onboarding => call onboarding_step(message). "
-                "- cooking_mode => call cooking_step(message). "
-                "- ordering_mode => call ordering_step(message). "
-                "- adjusting_plan => call adjust_plan_step(message). "
-                "- idle with photo => call parse_inventory_photo. "
-                "- idle inventory text => add_inventory. "
-                "- idle meal question => get_today_meal or suggest_from_inventory. "
-                "- idle cooking start => start_cooking_today. "
-                "- idle groceries => start_grocery_order or order_delivery. "
-                "- shopping list => get_shopping_list. "
-                "- for all other requests, answer directly without calling tools. "
-                "If a tool returns [HANDLED], reply exactly [HANDLED] and nothing else."
+                "You are Bobby, the friendly Apron cooking assistant on WhatsApp. "
+                "You help people set up their kitchen, plan meals, and cook.\n\n"
+                "# Message format\n"
+                "You receive: state=<STATE>; onboarding_step=<N>; message=<TEXT>; has_image=<BOOL>\n\n"
+                "# Rules\n"
+                "- If state=onboarding: call the onboarding_step tool with the user's message, "
+                "then respond with exactly HANDLED. Do NOT add anything else. "
+                "Do NOT call the tool more than once.\n"
+                "- If state=idle (or any other state): reply directly to the user in a warm, "
+                "concise style. Do NOT call any tools. Just chat.\n\n"
+                "# Style\n"
+                "- Keep replies short (1-3 sentences).\n"
+                "- Be warm and casual, like a friend who loves cooking.\n"
+                "- Use the user's name if you know it."
             ),
-            tools=[
-                onboarding_step,
-                cooking_step,
-                ordering_step,
-                adjust_plan_step,
-                add_inventory,
-                parse_inventory_photo,
-                get_today_meal,
-                suggest_from_inventory,
-                start_cooking_today,
-                start_grocery_order,
-                order_delivery,
-                get_shopping_list,
-            ],
+            tools=[onboarding_step],
         )
 
     async def handle_message(self, user: UserProfile, text: str, image_b64: str | None = None) -> bool:
@@ -203,11 +130,14 @@ class AdkOrchestratorService:
             session=session,
             artifact_service=self._artifact_service,
             session_service=self._session_service,
-            run_config=RunConfig(response_modalities=["TEXT"], max_llm_calls=2),
+            run_config=RunConfig(response_modalities=["TEXT"], max_llm_calls=3),
         )
 
         response_parts: list[str] = []
         async for event in self._agent.run_async(ctx):
+            # Tool already sent a message — stop collecting.
+            if self._active.get("_tool_called"):
+                break
             content = getattr(event, "content", None)
             parts = getattr(content, "parts", None) if content else None
             if not parts:
@@ -217,8 +147,11 @@ class AdkOrchestratorService:
                 if text_part:
                     response_parts.append(text_part)
 
+        if self._active.get("_tool_called"):
+            return True
+
         reply = " ".join(p.strip() for p in response_parts if p and p.strip()).strip()
-        if not reply or reply == "[HANDLED]":
+        if not reply or reply.strip("[] ").upper() == "HANDLED":
             return True
         await self._messaging.send_text(user.phone_number, reply)
         return True

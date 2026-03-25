@@ -15,16 +15,18 @@ class Settings(BaseSettings):
     gemini_text_model: str = "gemini-3.1-flash-lite-preview"
     gemini_vision_model: str = "gemini-2.5-flash"
     minimax_api_key: str = ""
-    minimax_api_base: str = "https://api.minimax.io/anthropic/v1/messages"
-    minimax_text_model: str = "minimax/MiniMax-M2.5"
+    minimax_api_base: str = "https://api.minimax.io"
+    minimax_text_model: str = "minimax/MiniMax-M2.5-highspeed"
     minimax_vision_model: str = "minimax/MiniMax-VL-01"
 
     openai_api_key: str = ""
+    openai_text_model: str = "openai/gpt-4.1-mini"
+    openai_vision_model: str = "openai/gpt-4.1-mini"
 
     environment: str = "development"
     log_level: str = "INFO"
-    llm_provider: str = "inmemory"
+    llm_provider: str = "minimax"
     messaging_provider: str = "inmemory"
-    adk_model_provider: str = "gemini"
+    adk_model_provider: str = "minimax"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
