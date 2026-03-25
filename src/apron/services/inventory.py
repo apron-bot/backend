@@ -17,17 +17,23 @@ from apron.ports.repositories import InventoryRepository
 
 PHOTO_PROMPT = """You are a kitchen inventory assistant analyzing a photo of a fridge, pantry, or kitchen counter.
 
-Your task: identify every FOOD ITEM visible in the photo by its common grocery name.
+Your task: build a DETAILED grocery inventory from this photo.
 
 Rules:
-- Use standard grocery names: "whole milk", "eggs", "Greek yogurt", "cheddar cheese", "chicken breast", etc.
-- Do NOT describe containers or packaging. "Small yellow container" is WRONG. "Butter" is CORRECT.
-- If you cannot confidently identify a food, make your best guess based on shape/color/context.
-- Estimate quantity in standard units (ml, g, units, liters, kg).
-- If you can read a label, use the product name from the label.
+- Identify every food item by its standard grocery name (e.g. "whole milk", "eggs", "Greek yogurt", "cheddar cheese", "chicken breast").
+- NEVER describe containers or packaging. "Small yellow container" is WRONG — identify what's INSIDE it. If it looks like butter, say "butter". If it looks like hummus, say "hummus".
+- If you can read any label or brand name, use it (e.g. "Danone vanilla yogurt" instead of just "yogurt").
+- Be SPECIFIC about quantities — count individual items where possible:
+  - Eggs: count them (e.g. 6 units, not "some eggs")
+  - Bottles/cartons: estimate volume (e.g. 1000 ml, 500 ml)
+  - Fruits/vegetables: count them (e.g. 3 units of apples)
+  - Packaged items: estimate weight if visible (e.g. 200 g)
+- Use sensible units: "units" for countable items, "ml" or "liters" for liquids, "g" or "kg" for solids.
+- If you see multiple of the same item, combine them into one entry with the total quantity.
+- Skip non-food items (cleaning products, containers with unknown contents that you truly cannot guess).
 - Estimate expiry date if visible on packaging (format: YYYY-MM-DD).
 
-Return ONLY a JSON array: [{"name": "milk", "quantity": 1000, "unit": "ml", "estimated_expiry": "2026-04-15"}, ...]"""
+Return ONLY a JSON array: [{"name": "whole milk", "quantity": 1000, "unit": "ml", "estimated_expiry": "2026-04-15"}, ...]"""
 
 MESSAGE_PROMPT = """Extract inventory items from user text.
 Return ONLY JSON array: [{"name":"...", "quantity": 1, "unit":"units"}]"""
