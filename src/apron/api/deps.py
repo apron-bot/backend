@@ -124,7 +124,10 @@ def _container() -> dict:
         messaging,
         user_repo,
     )
-    onboarding = OnboardingService(user_repo, inventory, messaging, clock)
+    onboarding = OnboardingService(
+        user_repo, inventory, messaging, clock,
+        on_onboarding_complete=lambda user_id: planner.generate_weekly_plan(user_id),
+    )
     cooking = CookingSessionService(messaging, llm, inventory_repo, user_repo)
     if adk_model_provider == "openai":
         adk_model = settings.openai_text_model

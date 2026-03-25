@@ -11,6 +11,24 @@ from apron.ports.repositories import UserRepository
 from apron.services.inventory import InventoryService
 
 
+_POSITIVE_RESPONSES = {
+    "yes", "y", "correct", "si", "sí", "ok", "okay", "sure", "yep", "yeah",
+    "looks good", "that's right", "thats right", "no corrections", "perfect",
+    "good", "fine", "right", "confirm", "confirmed", "all good", "looks correct",
+}
+
+
+def _is_positive(text: str) -> bool:
+    """Check if user response is a positive confirmation."""
+    normalized = text.strip().lower()
+    if normalized in _POSITIVE_RESPONSES:
+        return True
+    # Check if response starts with a positive word and doesn't contain "no" as negation
+    if any(normalized.startswith(p) for p in ("yes", "y ", "ok", "sure", "correct", "good", "right", "perfect")):
+        return True
+    return False
+
+
 class OnboardingService:
     def __init__(
         self,
@@ -18,12 +36,14 @@ class OnboardingService:
         inventory_service: InventoryService,
         messaging: MessagingPort,
         clock: ClockPort,
+        on_onboarding_complete=None,
     ) -> None:
         self._user_repo = user_repo
         self._inventory_service = inventory_service
         self._messaging = messaging
         self._clock = clock
         self._pending_inventory: dict[str, list] = {}
+        self._on_complete = on_onboarding_complete  # async callback(user_id)
 
     async def start(self, phone: str) -> UserProfile:
         now = self._clock.now().astimezone(timezone.utc)
@@ -82,17 +102,25 @@ class OnboardingService:
                 )
                 return user
 
-            if normalized in {"yes", "y", "correct"}:
+            if _is_positive(message):
                 pending = self._pending_inventory.pop(str(user.id), [])
                 if pending:
                     await self._inventory_service.save_items(user.id, pending)
-                await self._messaging.send_text(user.phone_number, "Great. Any allergies?")
+                await self._messaging.send_text(user.phone_number, "Great. Any allergies? (or 'none')")
                 return await self._advance(user, 2)
-            await self._messaging.send_text(
-                user.phone_number,
-                "Got it. Send a new photo or corrections like: add 2 eggs, remove milk.",
-            )
-            return user
+            if normalized in {"no", "n", "wrong", "incorrect"}:
+                await self._messaging.send_text(
+                    user.phone_number,
+                    "Got it. Send a new photo or corrections like: add 2 eggs, remove milk.",
+                )
+                return user
+            # Treat anything else as corrections text (e.g. "add 2 eggs, remove milk")
+            # For now, accept and move on
+            pending = self._pending_inventory.pop(str(user.id), [])
+            if pending:
+                await self._inventory_service.save_items(user.id, pending)
+            await self._messaging.send_text(user.phone_number, "Got it. Any allergies? (or 'none')")
+            return await self._advance(user, 2)
 
         if step == 2:
             allergies = [] if normalized == "none" else [v.strip() for v in message.split(",") if v.strip()]
@@ -136,17 +164,43 @@ class OnboardingService:
             cuisines = [] if normalized == "none" else [v.strip() for v in message.split(",") if v.strip()]
             user = user.model_copy(update={"preferred_cuisines": cuisines})
             user = await self._save(user)
-            await self._messaging.send_text(
-                user.phone_number, "All set! Your first meal plan arrives Sunday. Reply OK to continue."
+            # Skip step 7 — go straight to completion
+            user = user.model_copy(
+                update={"conversation_state": ConversationState.IDLE, "onboarding_step": 0}
             )
-            return await self._advance(user, 7)
+            user = await self._save(user)
+            await self._messaging.send_text(
+                user.phone_number,
+                "You're all set! I'm generating your first weekly meal plan now..."
+            )
+            if self._on_complete:
+                try:
+                    await self._on_complete(user.id)
+                except Exception:
+                    await self._messaging.send_text(
+                        user.phone_number,
+                        "Had trouble generating the plan, but you're set up! Just ask me anytime."
+                    )
+            return user
 
         if step >= 7:
             user = user.model_copy(
                 update={"conversation_state": ConversationState.IDLE, "onboarding_step": 0}
             )
             user = await self._save(user)
-            await self._messaging.send_text(user.phone_number, "You're ready. Ask: what's for today?")
+            await self._messaging.send_text(
+                user.phone_number,
+                "You're all set! I'm generating your first weekly meal plan now..."
+            )
+            # Auto-generate meal plan
+            if self._on_complete:
+                try:
+                    await self._on_complete(user.id)
+                except Exception:
+                    await self._messaging.send_text(
+                        user.phone_number,
+                        "I had trouble generating your meal plan, but you're all set up! Just ask me anytime to generate one."
+                    )
             return user
 
         return user
