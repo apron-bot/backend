@@ -34,4 +34,9 @@ class Settings(BaseSettings):
     sqlite_path: str = "apron.db"
     adk_model_provider: str = "minimax"
 
+    browser_agent_model: str = "openai/gpt-4o"
+    browser_target_store: str = "https://tienda.mercadona.es"
+    mercadona_email: str = ""
+    mercadona_password: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

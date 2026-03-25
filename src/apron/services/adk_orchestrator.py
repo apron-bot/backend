@@ -204,19 +204,60 @@ class AdkOrchestratorService:
             self._active["_msg_sent"] = True
             user: UserProfile = self._active["user"]
             from apron.adapters.browser_ordering import BrowserOrderingAdapter
-            browser = BrowserOrderingAdapter()
+            from apron.api.streaming import get_event_bus
+            from apron.config import Settings
+            settings = Settings()
+            event_bus = get_event_bus()
+
+            def on_browser_step(screenshot_b64: str, description: str, step_num: int):
+                event_bus.emit("browser_step", {
+                    "screenshot": screenshot_b64,
+                    "description": description,
+                    "step": step_num,
+                    "status": "in_progress" if step_num >= 0 else "done",
+                })
+
+            browser = BrowserOrderingAdapter(
+                model=settings.browser_agent_model,
+                store=settings.browser_target_store,
+                email=settings.mercadona_email,
+                password=settings.mercadona_password,
+                on_step=on_browser_step,
+            )
             item_list = [i.strip() for i in items.split(",") if i.strip()]
             if not item_list:
                 return "No items to order."
             await self._messaging.send_text(
                 user.phone_number,
-                f"On it! I'm adding {len(item_list)} item(s) to your cart: {', '.join(item_list)}..."
+                f"On it! I'm adding {len(item_list)} item(s) to your Mercadona cart: {', '.join(item_list)}..."
             )
+            event_bus.emit("browser_step", {
+                "screenshot": None,
+                "description": f"Starting: adding {', '.join(item_list)} to cart...",
+                "step": 0,
+                "status": "starting",
+            })
             order = await browser.add_to_cart(item_list)
-            await self._messaging.send_text(
-                user.phone_number,
-                f"Cart ready on {order.store}! {order.summary}"
-            )
+            if order.status == "failed":
+                msg = f"Sorry, I had trouble adding items on Mercadona. {order.summary}"
+                event_bus.emit("browser_step", {
+                    "screenshot": None,
+                    "description": msg,
+                    "step": -1,
+                    "status": "failed",
+                })
+            else:
+                msg = f"Cart ready on Mercadona!\n\n{order.summary}"
+                if order.cart_url:
+                    msg += f"\n\nOpen your cart here: {order.cart_url}"
+                event_bus.emit("browser_step", {
+                    "screenshot": None,
+                    "description": order.summary,
+                    "step": -1,
+                    "status": "done",
+                    "cart_url": order.cart_url,
+                })
+            await self._messaging.send_text(user.phone_number, msg)
             return "Done — order status sent to user. Respond with HANDLED."
 
         async def get_shopping_list() -> str:
