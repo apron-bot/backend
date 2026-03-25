@@ -30,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV IN_DOCKER=True
 ENV CHROME_PATH=/usr/bin/chromium
 ENV CHROMIUM_PATH=/usr/bin/chromium
+# Give browser-use more time to connect to pre-started Chromium
+ENV TIMEOUT_BrowserStartEvent=90
 
 # Install Python deps
 COPY pyproject.toml README.md ./
@@ -51,4 +53,7 @@ RUN mkdir -p /app/data
 
 EXPOSE ${PORT}
 
-CMD uvicorn apron.main:app --host 0.0.0.0 --port ${PORT}
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+CMD ["/app/entrypoint.sh"]

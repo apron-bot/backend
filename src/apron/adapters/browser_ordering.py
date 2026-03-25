@@ -107,7 +107,7 @@ class BrowserOrderingAdapter:
         import os
         import shutil
         is_production = os.environ.get("ENVIRONMENT", "").lower() == "production"
-        in_docker = os.environ.get("IN_DOCKER", "").lower() in ("true", "1")
+        cdp_url = os.environ.get("CHROME_CDP_URL")
 
         # Find system Chromium (Docker installs it at /usr/bin/chromium)
         system_chromium = (
@@ -118,25 +118,34 @@ class BrowserOrderingAdapter:
         )
 
         logger.info(
-            "Browser agent starting: adding %d items to %s (headless=%s, chromium=%s, in_docker=%s)",
-            len(items), target_store, is_production, system_chromium, in_docker,
+            "Browser agent starting: adding %d items to %s (headless=%s, cdp_url=%s, chromium=%s)",
+            len(items), target_store, is_production, cdp_url, system_chromium,
         )
         try:
-            extra_args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
-            browser_profile = BrowserProfile(
-                headless=is_production,
-                keep_alive=False,
-                executable_path=system_chromium if system_chromium else None,
-                chromium_sandbox=False,
-                args=extra_args,
-            )
+            from browser_use.browser.session import BrowserSession
+
+            if cdp_url:
+                # Connect to pre-started Chromium (fast — no launch overhead)
+                browser_session = BrowserSession(
+                    cdp_url=cdp_url,
+                    keep_alive=True,
+                )
+            else:
+                # Local dev: launch a new browser
+                browser_session = BrowserSession(
+                    headless=is_production,
+                    keep_alive=False,
+                    executable_path=system_chromium if system_chromium else None,
+                    chromium_sandbox=False,
+                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+                )
             agent = Agent(
                 task=task,
                 llm=llm,
                 sensitive_data=sensitive_data if sensitive_data else None,
-                browser_profile=browser_profile,
+                browser_session=browser_session,
                 register_new_step_callback=on_step,
-                generate_gif=True,
+                generate_gif=not bool(cdp_url),
             )
             result = await agent.run(max_steps=50)
 
