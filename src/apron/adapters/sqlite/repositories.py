@@ -140,6 +140,11 @@ class SqliteUserRepository:
             u.updated_at.isoformat(),
         )
 
+    async def delete(self, user_id: UUID) -> None:
+        conn = await self._get_conn()
+        await conn.execute("DELETE FROM users WHERE id = ?", (str(user_id),))
+        await conn.commit()
+
     async def list_all(self) -> list[UserProfile]:
         conn = await self._get_conn()
         async with conn.execute(

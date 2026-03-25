@@ -31,6 +31,11 @@ class InMemoryUserRepository:
         self._by_phone[user.phone_number] = user.id
         return user
 
+    async def delete(self, user_id: UUID) -> None:
+        user = self._users.pop(user_id, None)
+        if user:
+            self._by_phone.pop(user.phone_number, None)
+
     async def list_all(self) -> list[UserProfile]:
         return list(self._users.values())
 
