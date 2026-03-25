@@ -44,7 +44,18 @@ def _container() -> dict:
     messaging_provider = settings.messaging_provider.lower().strip()
     adk_model_provider = settings.adk_model_provider.lower().strip()
 
-    user_repo = InMemoryUserRepository()
+    storage_backend = settings.storage_backend.lower().strip()
+    if storage_backend == "sqlite":
+        from apron.adapters.sqlite.repositories import (
+            SqliteInventoryRepository,
+            SqliteUserRepository,
+        )
+        user_repo = SqliteUserRepository(settings.sqlite_path)
+        inventory_repo = SqliteInventoryRepository(settings.sqlite_path)
+    else:
+        user_repo = InMemoryUserRepository()
+        inventory_repo = InMemoryInventoryRepository()
+
     if messaging_provider == "twilio":
         messaging = TwilioWhatsAppAdapter(
             settings.twilio_account_sid,
@@ -84,7 +95,6 @@ def _container() -> dict:
         llm = InMemoryLLM()
 
     clock = InMemoryClock()
-    inventory_repo = InMemoryInventoryRepository()
     plan_repo = InMemoryMealPlanRepository()
     recipe_repo = InMemoryRecipeRepository()
     shopping_repo = InMemoryShoppingListRepository()

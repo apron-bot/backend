@@ -2,14 +2,12 @@
 
 Usage:
     python -m apron.cli_chat
+    python -m apron.cli_chat --skip-onboarding
     python -m apron.cli_chat --phone +1234567890
 
 Send a photo by typing the file path:
     You: /path/to/fridge.jpg
-    You: ~/Photos/fridge.png
-
-Attach a photo with a message:
-    You: /path/to/fridge.jpg here's my fridge
+    You: ~/Photos/fridge.png here's my fridge
 """
 
 from __future__ import annotations
@@ -21,6 +19,7 @@ import sys
 from pathlib import Path
 
 from apron.api.deps import _container
+from apron.domain.enums import ConversationState
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,9 +54,44 @@ def _parse_input(raw: str) -> tuple[str, str | None]:
     return raw, None
 
 
-async def main(phone: str) -> None:
+async def _skip_onboarding(container: dict, phone: str) -> None:
+    """Create a user and fast-forward past onboarding to idle state."""
+    from datetime import timezone
+    from uuid import uuid4
+    from apron.domain.models import UserProfile
+
+    user_repo = container["user_repo"]
+    existing = await user_repo.get_by_phone(phone)
+    if existing and existing.conversation_state != ConversationState.ONBOARDING:
+        print("(user already past onboarding)")
+        return
+
+    from apron.ports.clock import ClockPort
+
+    now = __import__("datetime").datetime.now(timezone.utc)
+    user = (existing or UserProfile(
+        id=uuid4(),
+        phone_number=phone,
+        created_at=now,
+        updated_at=now,
+    )).model_copy(update={
+        "conversation_state": ConversationState.IDLE,
+        "onboarding_step": 0,
+        "updated_at": now,
+    })
+    if existing:
+        await user_repo.update(user)
+    else:
+        await user_repo.save(user)
+    print("(onboarding skipped — starting in idle state)")
+
+
+async def main(phone: str, skip_onboarding: bool = False) -> None:
     container = _container()
     router = container["router"]
+
+    if skip_onboarding:
+        await _skip_onboarding(container, phone)
 
     print(f"Chatting as {phone}  (type 'quit' to exit)")
     print("Tip: send a photo by typing its file path\n")
@@ -79,8 +113,9 @@ async def main(phone: str) -> None:
 
 if __name__ == "__main__":
     phone = "+0000000000"
+    skip = "--skip-onboarding" in sys.argv or "--skip" in sys.argv
     if "--phone" in sys.argv:
         idx = sys.argv.index("--phone")
         if idx + 1 < len(sys.argv):
             phone = sys.argv[idx + 1]
-    asyncio.run(main(phone))
+    asyncio.run(main(phone, skip_onboarding=skip))

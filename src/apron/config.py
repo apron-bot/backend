@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     llm_provider: str = "minimax"
     messaging_provider: str = "inmemory"
+    storage_backend: str = "sqlite"
+    sqlite_path: str = "apron.db"
     adk_model_provider: str = "minimax"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
