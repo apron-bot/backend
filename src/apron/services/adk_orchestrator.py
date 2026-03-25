@@ -217,11 +217,14 @@ class AdkOrchestratorService:
                     "status": "in_progress" if step_num >= 0 else "done",
                 })
 
+            # Use per-user credentials if available, fall back to global config
+            email = user.mercadona_email or settings.mercadona_email
+            password = user.mercadona_password or settings.mercadona_password
             browser = BrowserOrderingAdapter(
                 model=settings.browser_agent_model,
                 store=settings.browser_target_store,
-                email=settings.mercadona_email,
-                password=settings.mercadona_password,
+                email=email,
+                password=password,
                 on_step=on_browser_step,
             )
             item_list = [i.strip() for i in items.split(",") if i.strip()]

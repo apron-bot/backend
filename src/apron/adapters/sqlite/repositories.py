@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS users (
     disliked_ingredients TEXT DEFAULT '[]',
     conversation_state TEXT DEFAULT 'onboarding',
     onboarding_step INTEGER DEFAULT 0,
+    mercadona_email TEXT DEFAULT '',
+    mercadona_password TEXT DEFAULT '',
+    telegram_chat_id TEXT DEFAULT '',
     created_at TEXT,
     updated_at TEXT
 )"""
@@ -85,8 +88,9 @@ class SqliteUserRepository:
                 id, phone_number, household_size, allergies, dietary_preferences,
                 taste_profiles, weekly_budget, preferred_cuisines, cooking_skill,
                 time_available, disliked_ingredients, conversation_state,
-                onboarding_step, created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                onboarding_step, mercadona_email, mercadona_password, telegram_chat_id,
+                created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             self._to_row(user),
         )
         await conn.commit()
@@ -99,7 +103,9 @@ class SqliteUserRepository:
                 household_size=?, allergies=?, dietary_preferences=?,
                 taste_profiles=?, weekly_budget=?, preferred_cuisines=?,
                 cooking_skill=?, time_available=?, disliked_ingredients=?,
-                conversation_state=?, onboarding_step=?, updated_at=?
+                conversation_state=?, onboarding_step=?,
+                mercadona_email=?, mercadona_password=?, telegram_chat_id=?,
+                updated_at=?
             WHERE id=?""",
             (
                 user.household_size,
@@ -113,6 +119,9 @@ class SqliteUserRepository:
                 json.dumps(user.disliked_ingredients),
                 user.conversation_state.value,
                 user.onboarding_step,
+                user.mercadona_email,
+                user.mercadona_password,
+                user.telegram_chat_id,
                 user.updated_at.isoformat(),
                 str(user.id),
             ),
@@ -136,6 +145,9 @@ class SqliteUserRepository:
             json.dumps(u.disliked_ingredients),
             u.conversation_state.value,
             u.onboarding_step,
+            u.mercadona_email,
+            u.mercadona_password,
+            u.telegram_chat_id,
             u.created_at.isoformat(),
             u.updated_at.isoformat(),
         )
@@ -169,6 +181,9 @@ class SqliteUserRepository:
             disliked_ingredients=json.loads(row["disliked_ingredients"]),
             conversation_state=ConversationState(row["conversation_state"]),
             onboarding_step=row["onboarding_step"],
+            mercadona_email=row["mercadona_email"] or "",
+            mercadona_password=row["mercadona_password"] or "",
+            telegram_chat_id=row["telegram_chat_id"] or "",
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )

@@ -31,6 +31,9 @@ class UserProfile(BaseModel):
     disliked_ingredients: list[str] = Field(default_factory=list)
     conversation_state: ConversationState = ConversationState.ONBOARDING
     onboarding_step: int = 0
+    mercadona_email: str = ""
+    mercadona_password: str = ""
+    telegram_chat_id: str = ""
     created_at: datetime
     updated_at: datetime
 

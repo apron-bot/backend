@@ -104,10 +104,13 @@ class BrowserOrderingAdapter:
                     except Exception:
                         logger.debug("Step callback error", exc_info=True)
 
-        logger.info("Browser agent starting: adding %d items to %s", len(items), target_store)
+        import os
+        is_production = os.environ.get("ENVIRONMENT", "").lower() == "production"
+
+        logger.info("Browser agent starting: adding %d items to %s (headless=%s)", len(items), target_store, is_production)
         try:
             browser_profile = BrowserProfile(
-                headless=False,
+                headless=is_production,
                 keep_alive=False,
             )
             agent = Agent(
