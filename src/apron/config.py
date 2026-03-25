@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_from_number: str = "whatsapp:+14155238886"
 
+    telegram_bot_token: str = ""
+    telegram_bot_username: str = ""
+
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-20250514"
     gemini_api_key: str = ""

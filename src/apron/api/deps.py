@@ -20,7 +20,9 @@ from apron.adapters.inmemory import (
 )
 from apron.adapters.minimax_llm import MiniMaxLLMAdapter
 from apron.adapters.openai_llm import OpenAILLMAdapter
+from apron.adapters.telegram_messaging import TelegramMessagingAdapter
 from apron.adapters.twilio_whatsapp import TwilioWhatsAppAdapter
+from apron.api.streaming import get_event_bus as _get_event_bus
 from apron.config import Settings
 from apron.services.cooking import CookingSessionService
 from apron.services.inventory import InventoryService
@@ -56,7 +58,11 @@ def _container() -> dict:
         user_repo = InMemoryUserRepository()
         inventory_repo = InMemoryInventoryRepository()
 
-    if messaging_provider == "twilio":
+    if messaging_provider == "telegram":
+        messaging = TelegramMessagingAdapter(
+            bot_token=settings.telegram_bot_token,
+        )
+    elif messaging_provider == "twilio":
         messaging = TwilioWhatsAppAdapter(
             settings.twilio_account_sid,
             settings.twilio_auth_token,
@@ -206,3 +212,7 @@ def get_planner() -> MealPlannerService:
 
 def get_scheduler() -> ProactiveSchedulerService:
     return _container()["scheduler"]
+
+
+def get_event_bus():
+    return _get_event_bus()
